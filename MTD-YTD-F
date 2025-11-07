@@ -1,0 +1,103 @@
+import quantstats as qs
+import pandas as pd
+from datetime import datetime
+
+
+#Llama inputs
+date = "2025-08-19"
+ruta_f = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/" #Ruta donde vive el catalogo factor para extranjeros 
+bench = pd.read_excel(ruta_f+"bench_new1.xlsx", sheet_name= "Indice Bench") #Ruta + nombre de archivo + hoja a leer 
+fondo = pd.read_excel(ruta_f+"bench_new1.xlsx", sheet_name= "Rendimiento Fondos FEE")
+fondo.columns = ["Date","Fondo","Valor"]
+mes_act = datetime.now().month
+
+#Filtra database
+bench = bench[bench["Date"] <= date]
+fondo = fondo[fondo["Date"] <= date]
+
+#Define portafolios
+port = ["CAJANYL","PREVSM","PREVSML","PREVSMM","RBALMXP","RBALUSD","RCONMXP","RCONUSD","RPINT","RPROACT","SEGFPJ","VISU10","VISU20","VISU30","VISU5"] 
+
+#CREA FUNCIONES PARA CALCULAR RENDIMIENTOS
+
+
+def return_years(df,año,metrica,tipo,date):
+    
+    result = []
+    
+    for portafolio in port:
+        
+        df_port = df[df["Fondo"] == portafolio]
+        fecha_objetivo = df_port['Date'].max()
+        # Calculamos la fecha que se requiera atrás
+        fecha_ant = fecha_objetivo - pd.DateOffset(years= año)
+        #Buscamos la fecha hábil anterior más próxima en el DataFrame
+        fechas_validas = df_port[df_port['Date'] <= fecha_ant]
+        fecha_ant_real = fechas_validas['Date'].max()
+        #Calcular el rendimiento
+        df_rend = df_port[(df_port['Date'] > fecha_ant_real) & (df_port['Date'] <= fecha_objetivo)]
+        rendimiento = (df_rend['Valor'] + 1).prod() - 1
+        rendimiento = ((1 + rendimiento) ** (1/año)) - 1 
+        df_final = pd.DataFrame([{
+             'Metrica': metrica,
+             '%': rendimiento,
+             'Portafolio': portafolio,
+             'Type': tipo,
+             'Date': date
+        }])
+        result.append(df_final)
+        
+        
+    return pd.concat(result, ignore_index=True)
+
+
+def return_ytdy_mtd(df,metrica,tipo,mes):
+    
+    result = []
+    
+    for portafolio in port:
+        
+        df_port = df[df["Fondo"] == portafolio]
+        fecha_ytd = df_port['Date'].max()
+        # Calculamos la fecha que se requiera atrás
+        df_filtrado = df_port[df_port['Date'] >= pd.Timestamp(year=fecha_ytd.year, month=mes, day=1)]
+        #Buscamos la fecha hábil anterior más próxima en el DataFrame
+        #Calcular el rendimiento
+        rendimiento = (df_filtrado['Valor'] + 1).prod() - 1
+        df_final = pd.DataFrame([{
+             'Metrica': metrica,
+             '%': rendimiento,
+             'Portafolio': portafolio,
+             'Type': tipo,
+             'Date': date
+        }])
+        result.append(df_final)
+        
+        
+    return pd.concat(result, ignore_index=True)
+
+
+#Llama función MTD y YTD
+call_ytd_fondo = return_ytdy_mtd(fondo, "YTD", "Fondo", 1)
+call_ytd_bench = return_ytdy_mtd(bench, "YTD", "Benchmark", 1)
+call_mtd_fondo = return_ytdy_mtd(fondo, "MTD", "Fondo", mes_act)
+call_mtd_bench = return_ytdy_mtd(fondo, "MTD", "Benchmark", mes_act)
+
+
+
+#Llama la función L12M para fondo y benchmark
+call_doce_fondo = return_years(fondo, 1, "L12M","Fondo", date)
+call_doce_bench = return_years(bench, 1, "L12M","Benchmark", date)
+
+#Llama la función 36M para fondo y benchmark
+call_tres_fondo = return_years(fondo, 3, "3Y","Fondo", date)
+call_tres_bench = return_years(bench, 3, "3Y","Benchmark", date)
+
+#Hace append entre las variables
+call = call_ytd_fondo._append(call_ytd_bench)
+call = call._append(call_mtd_fondo)
+call = call._append(call_mtd_bench)
+call = call._append(call_doce_fondo) 
+call = call._append(call_doce_bench) #Acumula L12M benchmark
+call = call._append(call_tres_fondo) #Acumula 3Y fondo
+call = call._append(call_tres_bench) #Acumula 3Y benchmark
