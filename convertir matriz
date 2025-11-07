@@ -1,0 +1,113 @@
+import pandas as pd 
+from datetime import datetime
+
+hoy_f = datetime(2025,11,6).date()
+hoy = "2025-11-06"
+hoyy = "20251106" #Cambiar fecha de hoy para traer archivos 
+
+ruta_o = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Matriz_omega/"+hoy+"_Matriz_Omega_1000.xls"#Ruta donde vive el catalogo factor para extranjeros 
+ruta_a = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Matriz_alfa/"+hoy+"_Matriz_Alfa_1000.xls" #Ruta donde vive el catalogo factor para extranjeros 
+ruta_m = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Mercado/"
+ruta_c = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Catalogo/"
+ruta_v = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Vector/"
+ruta_tc = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Tipo de cambio/"
+ruta_vusd = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Vector USD/" 
+
+
+mercado = pd.read_excel(ruta_m+"SolCML"+" "+hoy+".xls")
+mercado.insert(0, "ID", mercado["BMV"] +"_"+mercado["Emisora"] +"_"+mercado["Serie"]) #Inserta un ID al vector
+mercado.loc[mercado["Pzo"] < 20, "Títulos"] = 0
+mercado = mercado[["ID", "Títulos","Portafolio", "Mon"]]
+mercado = mercado.groupby(["ID","Portafolio","Mon"])["Títulos"].sum().reset_index()
+vector = pd.read_excel(ruta_v+"VectorAnalitico"+hoyy+"MD.xls", header = 1)
+vector.insert(0, "ID", vector["TIPO VALOR"] + "-" + vector["EMISORA"] + "-" + vector["SERIE"]) #Inserta un ID al vector
+vec = pd.read_excel(ruta_vusd+"Vector_USD"+".xlsx")
+tc = pd.read_excel(ruta_tc+"Tipo Cambio Spot"+".xlsx")
+tc["Fecha"] = pd.to_datetime(tc['Fecha'])
+ponderador = pd.read_excel(ruta_c+"PonderadorUSD"+".xlsx")
+ponderador = ponderador.rename(columns={"Llave":"ID"})
+ponderador['ID'] = ponderador['ID'].str.replace('-', '_', regex=False)
+ponderador.loc[ponderador["ID"] == "D8_MSFT_1_19", "ID"] = "D8_MSFT_1-19" #Revisar como hacerlo mas fácil
+
+
+#mxn
+mxn = vector.loc[vector["ID"] == "*C-MXPUSD-V48", "PRECIO SUCIO"] #Extrae el tipo de cambio SPOT del vector del día de reporte
+mxn = mxn.to_numpy() #Convierte el tipo de cambio de dataframe a vector para poder hacer calculos 
+
+######################### Concatena todas las hojas de la matriz omega ################################
+
+def matriz(ruta):
+    with pd.ExcelFile(ruta) as xls: 
+       df = pd.concat(pd.read_excel(xls, sheet_name=None, header= None), ignore_index=True, axis=1)
+       titulos_o = df.iloc[0,:].astype("str").tolist() #Toma la fila cero y todas las columnas las guarda en esta variable
+       df.columns = titulos_o # Le da el nombre a las columnas que guardo en la varibale titulos
+       df = df.iloc[2:1002,:] #Toma de la fila 0 en adelante y todas las columnas (practicamente elimina toda la fila 0)
+       df = df.loc[:, ~df.columns.duplicated()] #Selecciona sólo las columnas que no están duplicadas
+       df["HOLDING (PiP)"] = pd.to_datetime(df["HOLDING (PiP)"], errors= "coerce") #Convierte la columna a tipo date
+       df[df.columns[1:]] = df[df.columns[1:]].astype(float) #Convierte la columna a tipo float
+
+    return df
+
+df_omega = matriz(ruta_o)
+df_alfa = matriz(ruta_a)
+
+df_total = pd.merge(df_alfa,df_omega,on='HOLDING (PiP)', how="outer")
+
+
+
+df_total = df_total.tail(250)
+matr = df_total.melt(id_vars='HOLDING (PiP)', var_name='ID', value_name='Valor') #Voltea para tener las fechas como las necesitamos
+matr = matr[["ID","HOLDING (PiP)","Valor"]]
+matr = pd.merge(mercado,matr,on="ID",how="inner")
+# Reemplazo en toda la columna para poder trabajar con el catalogo de ponderados
+#matr['ID'] = matr['ID'].str.replace('-', '_', regex=False)
+
+tr = matr[matr["Portafolio"] == "RCONUSD"]
+
+t = tr.pivot(index=['HOLDING (PiP)','Portafolio','Mon'], columns=['ID','Títulos'],values='Valor').reset_index()
+
+def matriz_rexpresada(matr, tc, vec, ponderador, mxn, date): 
+    
+    precio_cierre = vec[vec['Fecha'].dt.date == date]
+    precio_cierre = precio_cierre.rename(columns={"Precio":"Precio cierre"})
+    precio_cierre = precio_cierre[["ID","Precio cierre"]]
+
+    #Fecha a analizar 
+    fecha = matr[["HOLDING (PiP)"]]
+    fecha = fecha.drop_duplicates()
+    fecha = fecha.rename(columns={"HOLDING (PiP)":"Fecha"})
+
+    #Tipo de cambio
+    tc = tc[["Fecha","T cambio"]]
+    tc = pd.merge(fecha, tc, on= "Fecha", how="inner")
+    tc["Rendimiento"] = ((1/tc["T cambio"]) / (1/tc["T cambio"].shift(1))).fillna(1)
+    tcr = tc[["Fecha", "Rendimiento"]]
+
+    #Limpia matriz 
+    df = matr[["ID", "HOLDING (PiP)", "Valor"]]
+    df = df.drop_duplicates()
+    df = df.rename(columns={"HOLDING (PiP)":"Fecha"})
+
+    #Une matriz con calculos
+    pr = pd.merge(df, ponderador, on="ID", how="inner") #REVISAR EL PONDERADOR ESTA MAL TIENE VALORES DUPLICADOS
+    pr = pd.merge(pr,fecha, on="Fecha",how="inner")
+    pr = pd.merge(pr,tcr,on="Fecha",how="left")
+    pr = pd.merge(pr,precio_cierre,on="ID",how="left")
+    pr["Precio cierre usd"] = pr["Precio cierre"] / mxn
+    pr["Valor"] = (((((pr["Valor"] + pr["Precio cierre"]) / mxn) * pr["Rendimiento"]) - pr["Precio cierre usd"]) / pr["Base"])
+    pr = pr[["ID", "Fecha", "Valor"]]
+    pr = pr.rename(columns={"Fecha":"HOLDING (PiP)"})
+    
+    # Hacer el merge sin agregaciones, solo actualizando donde coincide ID y Fecha y conservando el Nombre
+    matriz = pd.merge(matr, pr, on=["ID", "HOLDING (PiP)"], how="left", suffixes=('', '_nuevo'))
+    #Actualizar valores solo donde haya coincidencia
+    matriz['Valor'] = matriz['Valor_nuevo'].combine_first(matriz['Valor'])
+    matriz.drop(columns=['Valor_nuevo'], inplace=True)
+
+    return(matriz)
+
+#Manda a llamar la función con la matriz reexpresada para USD
+matriz = matriz_rexpresada(matr, tc, vec, ponderador,mxn, hoy_f)
+#Escribe matriz final en un archivo de excel
+matriz.to_excel('C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Matriz_VaR/'+"Matriz"+hoy+'.xlsx', index=False)
+
