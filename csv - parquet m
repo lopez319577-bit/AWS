@@ -1,0 +1,144 @@
+import sys
+from awsglue.transforms import *
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from awsglue.dynamicframe import DynamicFrameCollection
+from awsglue.dynamicframe import DynamicFrame
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
+import datetime
+import boto3,time
+import pandas as pd
+from pyspark.sql import functions as F
+  
+args = getResolvedOptions(sys.argv, ["JOB_NAME"])
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+job.init(args['JOB_NAME'], args)
+
+table_schema = StructType([StructField("id_pos", StringType(), False),
+                          StructField("nb_padre", StringType(), False),
+                          StructField("nb_portafolio", StringType(), False),
+                          StructField("nb_mon", StringType(), False),
+                          StructField("nb_instrumento", StringType(), False),
+                          StructField("nb_custodio", StringType(), False),
+                          StructField("nb_bmv", StringType(), False),
+                          StructField("nb_emisora", StringType(), False),
+                          StructField("nb_serie", StringType(), False),
+                          StructField("nb_t", StringType(), False),
+                          StructField("nb_calif", StringType(), False),
+                          StructField("fh_ult_cpra", StringType(), False),
+                          StructField("fh_vto", StringType(), False),
+                          StructField("nu_pzo", StringType(), False),
+                          StructField("nu_dxv", StringType(), False),
+                          StructField("imp_tasa_pact", StringType(), False),
+                          StructField("imp_stasa_pact", StringType(), False),
+                          StructField("nb_c", StringType(), False),
+                          StructField("nu_titulos", StringType(), False),
+                          StructField("imp_costo", StringType(), False),
+                          StructField("imp_precio", StringType(), False),
+                          StructField("imp_tasa", StringType(), False),
+                          StructField("imp_valor", StringType(), False),
+                          StructField("imp_interes_cpn", StringType(), False),
+                          StructField("imp_total", StringType(), False),
+                          StructField("nb_isin", StringType(), False),
+                          StructField("nb_bursatilidad", StringType(), False),
+                          StructField("imp_tasa_cpn", StringType(), False),
+                          StructField("fh_prox_cpn", StringType(), False),
+                          StructField("nu_id_pos_imp", StringType(), False),
+                          StructField("imp_stasa", StringType(), False),
+                          StructField("nu_dxv_cpn", StringType(), False),
+                          StructField("nu_pzo_cpn", StringType(), False),
+                          StructField("fh_ult_cpra_liq", StringType(), False),
+                          StructField("filename", StringType(), False)])
+
+bucket_path = 's3://inv-zone-smnylsbx/workspace/'
+folder_path = 'Data_Enginner/Mercado/xls/output/'
+
+archivo_fuente = spark.read.format("csv") \
+                     .options(InferSchema = 'false', 
+                              delimiter = ',', 
+                              header = 'true', 
+                              encoding = 'utf-8', 
+                              nullValue = '') \
+                     .schema(table_schema) \
+                     .load(bucket_path + folder_path)
+df = DynamicFrame.fromDF(archivo_fuente, glueContext, "df")
+df1 = df.toDF().withColumn("fech_proceso", F.to_date(F.substring(F.col('filename'),-14,10),'yyyy-MM-dd'))\
+               .withColumn("fh_ult_cpra", F.expr("""case when fh_ult_cpra like '%Jan%' then split(trim(fh_ult_cpra), ' ')[2] || '-01-' || lpad(split(trim(fh_ult_cpra), ' ')[0], 2, '0') || ' 00:00:00'  when fh_ult_cpra like '%Apr%' then split(trim(fh_ult_cpra), ' ')[2] || '-04-' || lpad(split(trim(fh_ult_cpra), ' ')[0], 2, '0') || ' 00:00:00'  when fh_ult_cpra like '%Aug%' then split(trim(fh_ult_cpra), ' ')[2] || '-08-' || lpad(split(trim(fh_ult_cpra), ' ')[0], 2, '0') || ' 00:00:00' when fh_ult_cpra like '%Dec%' then split(trim(fh_ult_cpra), ' ')[2] || '-12-' || lpad(split(trim(fh_ult_cpra), ' ')[0], 2, '0') || ' 00:00:00' when trim(fh_ult_cpra) in ('-', 'nan') then null else fh_ult_cpra end"""))\
+               .withColumn("fh_vto", F.expr("""case when fh_vto like '%Jan%' then split(trim(fh_vto), ' ')[2] || '-01-' || lpad(split(trim(fh_vto), ' ')[0], 2, '0') || ' 00:00:00'  when fh_vto like '%Apr%' then split(trim(fh_vto), ' ')[2] || '-04-' || lpad(split(trim(fh_vto), ' ')[0], 2, '0') || ' 00:00:00'  when fh_vto like '%Aug%' then split(trim(fh_vto), ' ')[2] || '-08-' || lpad(split(trim(fh_vto), ' ')[0], 2, '0') || ' 00:00:00' when fh_vto like '%Dec%' then split(trim(fh_vto), ' ')[2] || '-12-' || lpad(split(trim(fh_vto), ' ')[0], 2, '0') || ' 00:00:00' when trim(fh_vto) in ('-', 'nan') then null else fh_vto end"""))\
+               .withColumn("fh_prox_cpn", F.expr("case when fh_prox_cpn like '%Jan%' then substring(fh_ult_cpra, length(fh_ult_cpra)-3,4)||'-01-'||lpad(trim(split(fh_ult_cpra, ' ')[0]), 2, '0')||' 00:00:00' when fh_prox_cpn like '%Apr%' then substring(fh_ult_cpra, length(fh_ult_cpra)-3,4) ||'-04-'||lpad(trim(split(fh_ult_cpra, ' ')[0]), 2, '0')||' 00:00:00' when fh_prox_cpn like '%Aug%' then substring(fh_ult_cpra, length(fh_ult_cpra)-3,4)||'-08-'||lpad(trim(split(fh_ult_cpra, ' ')[0]), 2, '0')||' 00:00:00' when fh_prox_cpn like '%Dec%' then substring(fh_ult_cpra, length(fh_ult_cpra)-3,4)||'-12-'||lpad(trim(split(fh_ult_cpra, ' ')[0]), 2, '0')||' 00:00:00' when trim(fh_prox_cpn) in ('-','nan') then null else fh_prox_cpn end"))\
+               .withColumn("nu_pzo", F.expr("case when trim(nu_pzo) in ('-','nan') then null else nu_pzo end"))\
+               .withColumn("nu_dxv", F.expr("case when trim(nu_dxv) in ('-','nan') then null else nu_dxv end"))\
+               .withColumn("anio", F.substring(F.col('filename'), -14,4))\
+               .withColumn("mes", F.substring(F.col('filename'), -9,2))\
+               .withColumn("dia", F.substring(F.col('filename'), -6,2))
+df2 = DynamicFrame.fromDF(df1, glueContext, "df2")
+
+df3 = df2.toDF().select(F.col('id_pos').cast('bigint'), F.col('nb_padre'), F.col('nb_portafolio'), F.col('nb_mon'), F.col('nb_instrumento'), F.col('nb_custodio'), F.col('nb_bmv'), F.col('nb_emisora'), F.col('nb_serie'), F.col('nb_t'), F.col('nb_calif'), F.col('fh_ult_cpra').cast('date'), F.col('fh_vto').cast('date'), F.col('nu_pzo').cast('bigint'), F.col('nu_dxv').cast('bigint'), F.col('imp_tasa_pact').cast('decimal(25,8)'), F.col('imp_stasa_pact').cast('decimal(25,8)'), F.col('nb_c'), F.col('nu_titulos').cast('bigint'), F.col('imp_costo').cast('decimal(25,8)'), F.col('imp_precio').cast('decimal(25,8)'), F.col('imp_tasa').cast('decimal(25,8)'), F.col('imp_valor').cast('decimal(25,8)'), F.col('imp_interes_cpn').cast('decimal(25,8)'), F.col('imp_total').cast('decimal(25,8)'), F.col('nb_isin'), F.col('nb_bursatilidad'), F.col('imp_tasa_cpn').cast('decimal(25,8)'), F.col('fh_prox_cpn').cast('date'), F.col('nu_id_pos_imp').cast('bigint'), F.col('imp_stasa').cast('decimal(25,8)'), F.col('nu_dxv_cpn').cast('bigint'), F.col('nu_pzo_cpn').cast('bigint'), F.col('fh_ult_cpra_liq').cast('date'), F.col('fech_proceso').cast('date'), F.col('filename'), F.col('anio').cast('int'), F.col('mes').cast('int'), F.col('dia').cast('int'))
+df4 = DynamicFrame.fromDF(df3, glueContext, "df4") 
+
+# ##opcion 1 solo guarda el archivo
+#df4.toDF().write.partitionBy("anio", "mes", "dia").mode("append").parquet('s3://inv-zone-smnylsbx/workspace/Data_Enginner/Benchmark/stg_d_inv_mercado/')
+
+## opcion 2 crea la tabla 
+Datasink = glueContext.getSink(path = 's3://inv-zone-smnylsbx/workspace/Data_Enginner/Benchmark/stg_d_inv_mercado/', 
+                              connection_type = "s3", 
+                              updateBehavior = "UPDATE_IN_DATABASE", 
+                              partitionKeys = ["anio", "mes", "dia"], 
+                              enableUpdateCatalog = True, 
+                              transformation_ctx = "DataSink")
+Datasink.setCatalogInfo(catalogDatabase = 'bd_inversiones_workspace', 
+                        catalogTableName = 'stg_d_inv_mercado')
+Datasink.setFormat("glueparquet")
+Datasink.writeFrame(df4)
+
+
+####### MUEVE ARCHIVOS #######
+s3 = boto3.resource('s3')
+
+ # Archivos origen
+bucket_origen  = 'inv-zone-smnylsbx'
+origen_bucket = s3.Bucket(bucket_origen)
+carpeta_origen = 'workspace/Data_Enginner/Mercado/xls/output/'
+
+ ## Archivos destino
+bucket_destino = 'inv-zone-smnylsbx'
+destino_bucket = s3.Bucket(bucket_destino)
+carpeta_destino = 'workspace/Data_Enginner/Mercado/xls/output_procesados/'
+
+Ori_Arch = carpeta_origen
+Des_Arch = carpeta_destino
+
+for obj in origen_bucket.objects.filter(Prefix=Ori_Arch):
+    old_source = { 'Bucket': bucket_origen,
+                  'Key': obj.key}
+    new_key = obj.key.replace(Ori_Arch, Des_Arch, 1)
+    new_obj = destino_bucket.Object(new_key)
+    new_obj.copy(old_source)
+
+ 
+###### ELIMINA ARCHIVOS #######
+
+delete_bucket_name = 'inv-zone-smnylsbx'
+delete_path = 'workspace/Data_Enginner/Mercado/xls/output/'
+
+# Sufijo para los archivos a borrar
+delete_sufix_1 = '.csv'
+
+s3 = boto3.resource('s3')
+bucket = s3.Bucket(delete_bucket_name)
+
+objects = bucket.objects.filter(Prefix=delete_path)
+for obj in objects:
+  if obj.key.endswith(delete_sufix_1): 
+      obj.delete()
+
+
+
+job.commit()
+
