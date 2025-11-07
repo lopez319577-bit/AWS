@@ -1,0 +1,105 @@
+import boto3
+import s3fs
+import sys
+from awsglue.utils import getResolvedOptions
+import pandas as pd
+
+
+####   BUCKET y RUTAS #####
+# Definición del bucket fuente.
+bucket = 'inv-zone-smnylsbx/'
+
+# Definición de la ruta del folder fuente.
+folder = 'raw/Mercado/Mercado/'
+
+# Definición del bucket destino.
+bucket_target = 'inv-zone-smnylsbx/'
+
+# Definición de la ruta del folder destino.
+folder_target = 'workspace/Data_Enginner/Mercado/xls/output/'
+
+# Indica la "conexion" a S3 para la lectura de la ruta y obtener el nombre del archivo en los siguientes pasos.
+s3 =s3fs.S3FileSystem(anon=False)
+
+# Obtiene la ruta definida y el nombre de los archivos almacenados. Es una lista.
+path = s3.glob(bucket+folder)
+
+####   OBTENCIÓN DE NOMBRE DE ARCHIVO #####
+# Obtención del nombre del archivo para el primer registro de la lista.
+for obj in path:
+ name_file= obj.replace(bucket+folder,'')
+
+# Obtención del nombre del archivo destino desde el primer registro de la lista.
+ name_file_target= name_file.replace('.xls','.csv')
+
+####   CONVERSIÓN Y ESCRITURA #####
+# Definición de la ruta donde se encuentra el archivo .xls.
+ excel_path= 's3://'+bucket+folder+name_file
+
+# Lectura de la ruta donde se encuentra el archivo .xls y la hoja del archivo.
+ def leer_sheet1_o_hoja1(excel_path):
+     xls = pd.ExcelFile(excel_path)
+     for sheet_name in xls.sheet_names:
+         if sheet_name == "Sheet1" or sheet_name == "Hoja1":
+             df_xl_op = pd.read_excel(excel_path,sheet_name = sheet_name)
+     return df_xl_op
+
+ df_xl_op = leer_sheet1_o_hoja1(excel_path) 
+
+# Remoción de filas con todos los valores nulos (nan)
+ df_na=df_xl_op.dropna(how='all')
+
+# Conversión de columnas a tipo string
+ input_map=df_na.applymap(str)
+
+# Generación del dataframe
+ input_df = pd.DataFrame(input_map)
+ input_df["filename"] = name_file
+ 
+# Escritura del dataframe a la ruta destino
+ input_df.to_csv ('s3://'+bucket_target+folder_target+name_file_target, index = None, header=True)
+
+
+####### MUEVE ARCHIVOS #######
+
+
+s3 = boto3.resource('s3')
+
+ ## Archivos origen
+bucket_origen  = 'inv-zone-smnylsbx'
+origen_bucket = s3.Bucket(bucket_origen)
+carpeta_origen = 'raw/Mercado/Mercado/'
+
+ ## Archivos destino
+bucket_destino = 'inv-zone-smnylsbx'
+destino_bucket = s3.Bucket(bucket_destino)
+carpeta_destino = 'raw/Mercado/Mercado_procesados/'
+
+Ori_Arch = carpeta_origen
+Des_Arch = carpeta_destino
+
+for obj in origen_bucket.objects.filter(Prefix=Ori_Arch):
+    old_source = { 'Bucket': bucket_origen,
+                   'Key': obj.key}
+    new_key = obj.key.replace(Ori_Arch, Des_Arch, 1)
+    new_obj = destino_bucket.Object(new_key)
+    new_obj.copy(old_source)
+
+ 
+ 
+####### ELIMINA ARCHIVOS #######
+
+delete_bucket_name = 'inv-zone-smnylsbx'
+delete_path = 'raw/Mercado/Mercado/'
+
+# Sufijo para los archivos a borrar
+delete_sufix_1 = '.xls'
+
+s3 = boto3.resource('s3')
+bucket = s3.Bucket(delete_bucket_name)
+
+objects = bucket.objects.filter(Prefix=delete_path)
+for obj in objects:
+  if obj.key.endswith(delete_sufix_1): 
+      obj.delete()
+      
