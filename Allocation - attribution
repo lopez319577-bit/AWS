@@ -1,0 +1,443 @@
+import pandas as pd 
+import os as os 
+import numpy as np
+from datetime import datetime
+from openpyxl import load_workbook
+
+
+ruta = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts"
+
+#Colocar fecha hoy y ayer, convertirlas a texto para leer los archivos en ruta
+hoy_f = datetime(2025,11,6).date()
+ayer_f = datetime(2025,11,5).date()
+hoyy = hoy_f.strftime("%Y-%m-%d") 
+hoy = hoy_f.strftime("%Y%m%d") 
+ayyer = ayer_f.strftime("%Y-%m-%d")  
+ayer = ayer_f.strftime("%Y%m%d")
+
+actual_date = datetime.strptime(hoy, "%Y%m%d").date()
+
+#Mandar a llamar las rutas
+ruta = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/" #Ruta donde viven los vectores 
+ruta_v = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Vector/" #Ruta donde viven los vectores 
+ruta_m = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Mercado/"
+ruta_f = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Movimientos/"
+ruta_ft = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Movimiento y efectivos/"
+ruta_s = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Emisores/" 
+ruta_d = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Cartera Duracion/" 
+ruta_c = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Catalogo/"
+ruta_sm = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Security/"
+ruta_rsk = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Guidelines_python/RiskM/" 
+ruta_ff = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Flujo Futuro/"
+
+
+vector_hoy = pd.read_excel(ruta_v+"VectorAnalitico"+hoy+"MD.xls", header = 1) #Ruta + nombre de archivo + fecha 
+vector_ayer = pd.read_excel(ruta_v+"VectorAnalitico"+ayer+"MD.xls", header = 1)
+mercado_hoy = pd.read_excel(ruta_m+"SolCML"+" "+hoyy+".xls")
+mercado_ayer = pd.read_excel(ruta_m+"SolCML"+" "+ayyer+".xls")
+movimientos     = pd.read_excel(ruta_f+"CR Counterparty"+" "+hoyy+".xls")
+mov_efe = pd.read_excel(ruta_ft+hoyy+" "+"-"+" "+"Movimientos de efectivo"+".xls")
+solemi = pd.read_excel(ruta_s+"SolEmi"+" "+hoyy+".xls")
+mercado_dur = pd.read_excel(ruta_d+"SolYML"+" "+hoyy+".xls")
+rskm = pd.read_excel(ruta_rsk+"RiskMetrics"+".xlsx")
+flujo_futuro = pd.read_excel(ruta_ff+"CashFlow"+hoyy+".xls")
+comp = pd.read_excel(ruta_c+"Portafolios.xlsx", sheet_name="FondosGA")
+ga = pd.read_excel(ruta_c+"Portafolios.xlsx", sheet_name="Company")
+plazo = pd.read_excel(ruta_c+"Plazo Allocation"+".xlsx")
+ponderador = pd.read_excel(ruta_c+"PonderadorUSD"+".xlsx")
+bench_all = pd.read_excel(ruta+"bench_new1.xlsx",sheet_name="benchallocation")
+rf = pd.read_excel(ruta_c+"Catalogo_bench.xlsx", sheet_name= "RF") #Ruta + nombre de archivo + hoja a leer 
+rv = pd.read_excel(ruta_c+"Catalogo_bench.xlsx", sheet_name= "RV") #Ruta + nombre de archivo + hoja a leer 
+pip = pd.read_excel(ruta_c+"Catalogo_bench.xlsx", sheet_name= "PiP") #Ruta + nombre de archivo + hoja a leer 
+
+
+vector_hoy.insert(0, "ID", vector_hoy["TIPO VALOR"] +"-"+vector_hoy["EMISORA"] +"-"+ vector_hoy["SERIE"]) #Inserta un ID al vector
+vector_ayer.insert(0, "ID", vector_ayer["TIPO VALOR"] +"-"+ vector_ayer["EMISORA"] +"-"+ vector_ayer["SERIE"]) #Inserta un ID al vector
+mercado_hoy.insert(0, "ID", mercado_hoy["BMV"] +"-"+ mercado_hoy["Emisora"] +"-"+ mercado_hoy["Serie"]) #Inserta un ID al vector
+mercado_ayer.insert(0, "ID", mercado_ayer["BMV"] +"-"+ mercado_ayer["Emisora"] +"-"+ mercado_ayer["Serie"]) #Inserta un ID al vector
+solemi.insert(0, "ID", solemi["BMV"] +"-"+ solemi["Emisora"] +"-"+ solemi["Serie"]) #Inserta un ID al vector
+movimientos["Serie"] = movimientos["Serie"].astype(str) #Evita riesgo de que solo haya series numericas
+movimientos.insert(0, "ID", movimientos["BMV"] +"-"+ movimientos["Emisora"] +"-"+ movimientos["Serie"]) #Inserta un ID al vector
+#mov_efe["Serie"] = mov_efe["Serie"].fillna(0) #Evita riesgo de que solo haya series numericas
+#mov_efe["Serie"] = mov_efe["Serie"].astype(int) #Evita riesgo de que solo haya series numericas
+mov_efe["Serie"] = mov_efe["Serie"].astype(str) #Evita riesgo de que solo haya series numericas
+mov_efe.insert(0, "ID", mov_efe["BMV"] +"-"+ mov_efe["Emisora/concepto"] +"-"+ mov_efe["Serie"]) #Inserta un ID a movimientos y efectivos
+bench_all["DATE"] = bench_all["DATE"].dt.date
+
+#Hace pequeños cambios a inputs que se usan mas adelante para dejarlos listos
+vector_ayer = vector_ayer[["ID", "PRECIO SUCIO"]] #Extramos las columnas del vector t-1 que ocupamos en procesos futuros
+ponderador["Llave"] = ponderador["Llave"].str.replace("_", "", regex=False)
+ponderador = ponderador.rename(columns={"Llave": "ID"})
+mon_fondos = comp[["Portafolio", "Moneda"]]
+bench_all = bench_all[bench_all["DATE"] == hoy_f]
+
+
+#TIPOS DE CAMBIO HOY
+mxn = vector_hoy.loc[vector_hoy["ID"] == "*C-MXPUSD-V48", "PRECIO SUCIO"] #Extrae el tipo de cambio SPOT del vector del día de reporte
+mxn = mxn.iloc[0] #Extrae el indice de la fila 0 
+udi = vector_hoy.loc[vector_hoy["ID"] == "*C-MXPUDI-UDI", "PRECIO SUCIO"] #Extrae la UDI del día de reporte 
+udi = udi.iloc[0] #Extrae la fila 0 
+mxn_fix = vector_hoy.loc[vector_hoy["ID"] == "*C-MXPUSD-FIX", "PRECIO SUCIO"] #EL TIPO DE CAMBIO FIX LO USAMOS PARA PODER CONVERTIR LOS PRECIOS DE VECTOR A DÓLARES, DEBIDO A LA NOMENCLATURA ENTRE CARTERA Y VECTOR
+mxn_fix = mxn_fix.iloc[0]
+
+#TIPOS DE CAMBIO t-1
+mxn_t = vector_ayer.loc[vector_ayer["ID"] == "*C-MXPUSD-V48", "PRECIO SUCIO"] #Extrae el tipo de cambio SPOT del vector del día de reporte
+mxn_t = mxn_t.iloc[0] #Extrae el indice de la fila 0 
+udi_t = vector_ayer.loc[vector_ayer["ID"] == "*C-MXPUDI-UDI", "PRECIO SUCIO"] #Extrae la UDI del día de reporte 
+udi_t = udi_t.iloc[0] #Extrae la fila 0 
+mxn_fix_t = vector_ayer.loc[vector_ayer["ID"] == "*C-MXPUSD-FIX", "PRECIO SUCIO"] #EL TIPO DE CAMBIO FIX LO USAMOS PARA PODER CONVERTIR LOS PRECIOS DE VECTOR A DÓLARES, DEBIDO A LA NOMENCLATURA ENTRE CARTERA Y VECTOR
+mxn_fix_t = mxn_fix_t.iloc[0]
+
+#Flujo Futuro de Posición
+flujo_futuro["Flujo USD"] = flujo_futuro["Flujo mon"] / mxn
+flujo_futuro = flujo_futuro[["Tipo","Portafolio","Flujo mon","Flujo USD"]]
+flujo_futuro = flujo_futuro.groupby(["Tipo", "Portafolio"])[["Flujo mon", "Flujo USD"]].sum().reset_index()
+flujo_futuro["Date"] = hoy_f
+
+
+#Tratamiento movimientos (dividendo, corte cupon, amortizacion)
+movimientos["F oper"] = pd.to_datetime(movimientos['F oper']).dt.date
+movimientos = movimientos[movimientos["F oper"] == hoy_f]
+movimientos = movimientos.loc[movimientos["Movimiento"].isin(["CORTE CUPÓN","AMORT ANT VN","DIV EFECTIVO","AMORT ANT TIT"])]
+movimientos = pd.merge(movimientos, ponderador, on="ID", how="left")
+#movimientos = movimientos[movimientos["Pzo"].notna()]
+movimientos["Base"] = movimientos["Base"].fillna(1)
+movimientos['Total pesos'] = movimientos["Precio"] * movimientos["T cambio"] * movimientos["Base"]
+movimientos = movimientos[["ID","Portafolio","Total pesos","Movimiento"]].drop_duplicates()
+movimientos = movimientos.groupby(["ID","Portafolio"])[["Total pesos"]].sum().reset_index()
+
+#VECTOR
+vector_flo = vector_hoy[["ID","FECHA EMISION", "FECHA VCTO", "CUPONES EMISION"]]
+vector_flo[["ID","FECHA EMISION", "FECHA VCTO", "CUPONES EMISION"]] = vector_flo[["ID","FECHA EMISION", "FECHA VCTO", "CUPONES EMISION"]].replace("-",float("nan"))
+vector_flo1 = vector_flo[["ID","FECHA EMISION","FECHA VCTO","CUPONES EMISION"]].fillna(0)
+vector_flo1["FECHA EMISION"] = pd.to_datetime(vector_flo1["FECHA EMISION"])
+vector_flo1["FECHA VCTO"] = pd.to_datetime(vector_flo1["FECHA VCTO"])
+vector_flo1["DIAS CUPON"] = (((vector_flo1["FECHA VCTO"] - vector_flo1["FECHA EMISION"]).dt.days) // vector_flo1["CUPONES EMISION"])
+vector_flo1 = vector_flo1[["ID","DIAS CUPON"]] #AQUI PODEMOS UTILIZAR EL PZO CPN DE CARTERA MEJOR
+
+vector = vector_hoy[["ID","DURACION","CONVEXIDAD","DIAS TRANSC. CPN"]]
+vector[["DURACION","CONVEXIDAD","DIAS TRANSC. CPN"]] = vector[["DURACION","CONVEXIDAD","DIAS TRANSC. CPN"]].replace("-",0)
+vector = pd.merge(vector,vector_flo1, on="ID",how="inner")
+
+
+
+#vector.to_excel('C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/'+hoy+'veccc.xlsx', index=False)
+
+
+#RISK METRICS
+flujo_rsk = rskm[rskm["Date"].dt.date == actual_date]
+flujo_rsk = flujo_rsk[["Fondo","F tránsito MX","F tránsito USD" ]]
+flujo_rsk = flujo_rsk.rename(columns={"Fondo": "Portafolio", "F tránsito MX": "Total pesos", "F tránsito USD": "Total USD"}) #Camnio de nombre en columnas para poder hacer append con la cartera final
+flujo_rsk = flujo_rsk[(flujo_rsk["Total pesos"] != 0)] #Solo se queda con el flujo en tránsito de los portafolios que si tienen
+
+
+#Tratamiento SolEmi
+solemi = solemi[["ID","Tasa","Frecuencia"]]
+solemi = solemi.drop_duplicates("ID")
+solemi["Tasa"] = solemi["Tasa"].replace({"Variable": "Float", "Fija": "Fixed"})
+
+
+#Tratamiento mercado duración 
+mercado_dur = mercado_dur[["Pos","Duración","Convexidad"]]
+mercado_dur = mercado_dur.rename(columns={"Pos": 'Id pos'})
+mercado = pd.merge(mercado_hoy,mercado_dur,on="Id pos",how="inner")
+
+
+#Tratamineto de la cartera
+mercado = mercado[["Id pos","ID","BMV","Portafolio","Mon","DxV","Títulos","Total","Duración","Convexidad","Pzo","Pzo cpn"]]
+mercado['Total pesos'] = mercado.apply(lambda row: row['Total'] * mxn if row['Mon'] == 'USD' else (row['Total'] * udi if row['Mon'] == 'UDIS' else row['Total']), axis=1) #Agrega una columna para pasar la cartera a pesos 
+mercado["Total USD"] = mercado["Total pesos"] / mxn #Agrega una columna para pasar la cartera a dólares  
+mercado = pd.merge(mercado, vector, on="ID",how="left")
+mercado = pd.merge(mercado, solemi, on="ID",how="left")
+mercado[["DURACION","CONVEXIDAD","DIAS TRANSC. CPN", "DIAS CUPON","Pzo"]] = mercado[["DURACION","CONVEXIDAD","DIAS TRANSC. CPN","DIAS CUPON","Pzo"]].fillna(0) 
+
+mercado["CONVEXIDAD"]  = np.where((mercado["Tasa"] == "Float"),
+                       mercado["CONVEXIDAD"] == 0, mercado["CONVEXIDAD"]) #Pone 0 a flotantes en convexidad
+
+mercado["CONVEXIDAD"]  = np.where(mercado["BMV"] == "PRES",
+                       mercado["Convexidad"], mercado["CONVEXIDAD"]) #Pone convexidad a PRES
+
+
+mercado["DURACION"]  = np.where(mercado["Tasa"] == "Float",
+                       (mercado["DIAS CUPON"] - mercado["DIAS TRANSC. CPN"])/360, mercado["DURACION"]) #Calcula duración para flotantes
+
+mercado["DURACION"]  = np.where(mercado["BMV"] == "PRES",
+                       mercado["Duración"], mercado["DURACION"]) #Pone duracion a PRES
+
+mercado["DURACION"]  = np.where(mercado["BMV"] == "DTDR",
+                       mercado["Duración"], mercado["DURACION"]) #HAY QUE PONER DTDR TAMBIÉN PORQUE VECTOR NO TIENE 
+
+mercado["DURACION"]  = np.where(mercado["Pzo"] < 10,
+                       mercado["Pzo"]/365, mercado["DURACION"]) #HAY QUE PONER DTDR TAMBIÉN PORQUE VECTOR NO TIENE 
+
+mercado = mercado[["ID","Portafolio","Mon","DxV","BMV","Pzo", "DURACION","CONVEXIDAD", "Total pesos", "Total USD", "Tasa"]]
+mercado["DxV"] = mercado["DxV"].fillna(0)
+
+
+#Agrega el plazo para poder diferenciar entre liquidez y vencimientos
+pzo = mercado[["ID","Portafolio","Pzo"]]
+pzo = pzo[pzo["Pzo"] < 7]
+pzo = pzo.drop_duplicates()
+
+mercado = mercado.groupby(["ID", "Portafolio","BMV","DxV","Mon","DURACION","CONVEXIDAD",
+                           "Tasa"])[["Total pesos", "Total USD"]].sum().reset_index()
+
+####Agregamos plazo para identificar la liquidez
+mercado['Plazo'] = np.nan
+# Asignar valores usando un loop con condiciones
+for _, row in plazo.iterrows():
+    mask = (mercado["DxV"] >= row["Inferior"]) & (mercado["DxV"] < row["Superior"])
+    mercado.loc[mask, ["Plazo"]] = row[["Plazo"]].values
+
+mercado = pd.merge(mercado,plazo,on=["Plazo"], how="left").fillna(0) #Manda a llamr las demas columnas del catalogo de los intervalos
+
+#Agregamos el plazo para identificar entre vencimientos y liquidez
+mercado = pd.merge(mercado,pzo,on=["ID", "Portafolio"], how="left").fillna(0) #Junta la cartera con la variable pzo para identificar la liquidez
+mercado.loc[mercado["DxV"] > mercado["Pzo"], "Pzo"] = 0 #Agrega esta condición ya que un instrumento puede estar como inversión pero igual liquidez, así diferencia cual es inversión y cual liquidez
+
+#Crea los instrumentos con vencimiento
+mercado["Plazo"] = np.where((mercado["DxV"] > 0) & (mercado["DxV"] < 7) & (mercado["Pzo"] == 0),  "Maturity<7",
+                       mercado["Plazo"]) #Crea la condición para los vencimientos < a 7 días pzo a 0 para evitar que tome los instrumentos de liquidez
+
+#Crea los instrumentos con liquidez
+mercado["Plazo"] = np.where((mercado["Pzo"] > 0),  "Liquidity",
+                       mercado["Plazo"]) #En la variable pzo solo hay mayores a 0 por eso la condición para liquidity
+
+#USD
+mercado["Tasas"] = np.where((mercado["Mon"] == "USD") & (mercado["Tasa"] != "-"),  mercado["Tasa"] +"-"+"USD",
+                       mercado["Tasa"]) #Junta moneda USD con su tipo de tasa
+#Pesos
+mercado["Tasas"] = np.where((mercado["Mon"] == "Pesos") & (mercado["Tasa"] != "-"),  mercado["Tasa"] +"-"+ "MX",
+                       mercado["Tasas"]) #Junta moneda con su tipo de tasa
+#UDIS
+mercado["Tasas"] = np.where((mercado["Mon"] == "UDIS") & (mercado["Tasa"] != "-"),  mercado["Tasa"] +"-"+ "UDIS",
+                       mercado["Tasas"]) #Junta moneda con su tipo de tasa
+
+
+#Equity
+#mercado["Plazo"] = np.where((mercado["Plazo"] == 0),"Equity",
+                       #mercado["Plazo"]) #Después de colocar intervalos e indentificar la liquidez podemos generalizar el equity
+
+#Renombramos columnas para que pueda entrar a la caja que corresponde en tableau (Float, Equity, CKDS)
+mercado.loc[mercado["Tasa"] == "Float", "Time"] = "Float"
+mercado.loc[mercado["BMV"] == "1R", ["Time","Tasas","Plazo","Limite"]] = "CKDS"
+mercado.loc[mercado["BMV"] == "1B", ["Time","Tasas","Plazo","Limite"]] = "Local Equity"
+mercado.loc[mercado["BMV"] == "1I", ["Time","Tasas","Plazo","Limite"]] = "Global Equity"
+mercado.loc[mercado["Plazo"] == "Liquidity", "Limite"] = "Liquidity"
+mercado.loc[mercado["Plazo"] == "Liquidity", "Time"] = "Liquidity"
+mercado.loc[mercado["Plazo"] == "Liquidity", "Tasas"] = "-"
+mercado.loc[mercado["Plazo"].isin(["CKDS", "Global Equity", "Local Equity"]), "Tasas"] = "-"
+mercado.loc[mercado["Plazo"] == "Maturity<7", "Time"] = "Maturity<7"
+
+
+#Calcula precios DEUDA Y EQUITY (AGREGAR CORTES CUPON Y DIVIDENDO)
+perf_vec_hoy = vector_hoy[["ID", "PRECIO SUCIO"]] #Nos quedamos con los precios hoy del vector
+performance = mercado_hoy[["ID","Portafolio","BMV","Pzo", "Mon"]] #Extraemos de la cartera hoy lo que necesitamos
+performance = performance.drop(performance[performance['BMV'].isin(["PRES", "DTDR", "NB"])].index) #Eliminamos PRES, DTDR y NB que no están en vector
+performance = performance.fillna(100000) #Se da un plazo a equity para que el filtro de abajo no lo borre
+performance = performance.loc[performance["Pzo"] > 10] #Filtramos todo lo que no es liquidez
+performance = performance[["ID","Portafolio","BMV","Mon"]].drop_duplicates()
+performance = pd.merge(performance, perf_vec_hoy, on="ID", how="left")
+performance.loc[performance["Mon"] == "USD", "PRECIO SUCIO"] = (performance["PRECIO SUCIO"] /mxn_fix) * mxn #Pasa a pesos spot solo los instrumentos en USD
+performance = pd.merge(performance, movimientos, on=["ID","Portafolio"], how="left").fillna(0)
+performance["Precio"] = performance["PRECIO SUCIO"] + performance["Total pesos"]
+performance = performance[["ID","Portafolio","Precio","Mon"]]
+performance = pd.merge(performance, vector_ayer, on="ID", how="left") #Junta con el performance con los instrumentos de hoy con el vector de ayer
+performance.loc[performance["Mon"] == "USD", "PRECIO SUCIO"] = (performance["PRECIO SUCIO"] /mxn_fix_t) * mxn_t #Pasa a pesos spot solo los instrumentos en USD
+performance = pd.merge(performance, mon_fondos, on="Portafolio", how="left")
+performance.loc[performance["Moneda"] == "USD", "Precio"] = performance["Precio"] / mxn
+performance.loc[performance["Moneda"] == "USD", "PRECIO SUCIO"] = performance["PRECIO SUCIO"] / mxn_t
+performance["Performance"] = (performance["Precio"] / performance["PRECIO SUCIO"]-1) * 10000
+performance = performance[["ID","Portafolio","Precio","PRECIO SUCIO", "Performance"]]
+
+#Calcula precio para NB, PRES, DTDR (AGREGAR LOS CORTES CUPON)
+performance_car =  mercado_hoy[["ID","Portafolio","BMV","Pzo", "Mon","Total","Títulos"]] #Extraemos de la cartera hoy lo que necesitamos
+performance_car.loc[performance_car["Mon"] == "USD", "Total"] = performance_car["Total"] * mxn
+mercado_t =  mercado_ayer[["ID","Portafolio","BMV","Pzo", "Mon","Total","Títulos"]] #Extraemos de la cartera hoy lo que necesitamos
+mercado_t.loc[mercado_t["Mon"] == "USD", "Total"] = mercado_t["Total"] * mxn_t
+performance_car["Precio"] = performance_car["Total"] / performance_car["Títulos"]
+mercado_t["PRECIO SUCIO"] = mercado_t["Total"] / mercado_t["Títulos"]
+performance_car = performance_car[performance_car['BMV'].isin(["PRES","NB","DTDR"])].fillna(100000) #Se pone a los na (bursatiles) 100000 para poder quitar los dtdr que son liquidez y dejar los que no lo son
+performance_car = performance_car[performance_car['Pzo']>10]
+mercado_t = mercado_t[mercado_t['BMV'].isin(["PRES","NB","DTDR"])].fillna(100000)
+mercado_t = mercado_t[mercado_t['Pzo']>10]
+#performance_car = performance_car[["ID", "Portafolio", "Precio","Mon"]]
+performance_car = pd.merge(performance_car, movimientos, on=["ID","Portafolio"], how="left").fillna(0)
+performance_car["Precio"] = performance_car["Precio"] + performance_car["Total pesos"]
+performance_car = performance_car[["ID", "Portafolio", "Precio","Mon"]]
+performance_car.loc[performance_car["Mon"] == "USD", "Precio"] = performance_car["Precio"] / mxn
+mercado_t = mercado_t[["ID", "Portafolio", "PRECIO SUCIO","Mon"]]
+mercado_t.loc[mercado_t["Mon"] == "USD", "PRECIO SUCIO"] = mercado_t["PRECIO SUCIO"] / mxn_t
+performance_car = performance_car.drop_duplicates(subset=["ID", "Portafolio"])
+mercado_t = mercado_t.drop_duplicates(subset=["ID", "Portafolio"])
+performance_car = pd.merge(performance_car, mercado_t, on=["ID", "Portafolio"], how="left")
+performance_car["Performance"] = ((performance_car["Precio"] / performance_car["PRECIO SUCIO"]-1) * 10000).fillna(0)
+performance_car = performance_car[["ID","Portafolio","Precio","PRECIO SUCIO","Performance"]]
+
+#Calcula precio liquidez
+mov_efe["F ope"] = pd.to_datetime(mov_efe['F ope']).dt.date
+mov_efe = mov_efe[mov_efe["F ope"] >= hoy_f]
+#Compras
+mov_compra = mov_efe[mov_efe["Pzo"] < 10]
+mov_compra = mov_compra[mov_compra["Mov"].isin(["Compra", "Inicio reporto"])]
+mov_compra = mov_compra.groupby(["ID", "Portafolio"])[["Neto mon liq", "Títulos"]].sum().reset_index()
+mov_compra["PRECIO SUCIO"] = mov_compra["Neto mon liq"] / mov_compra["Títulos"]
+mov_compra = mov_compra[["ID","Portafolio","PRECIO SUCIO"]]
+#Vencimientos
+mov_ven = mov_efe[mov_efe["Mov"].isin(["Vencimiento", "Vto reporto"])]
+mov_ven = mov_ven.groupby(["ID", "Portafolio"])[["Neto mon liq", "Títulos"]].sum().reset_index()
+mov_ven["Precio"] = mov_ven["Neto mon liq"] / mov_ven["Títulos"]
+mov_ven = mov_ven[["ID","Portafolio","Precio"]]
+#Rendimiento
+movs = pd.merge(mov_compra,mov_ven,on=["ID", "Portafolio"], how="left")
+movs["Performance_movs"] = (movs["Precio"] / movs["PRECIO SUCIO"]-1) * 10000
+movs = movs[["ID","Portafolio","Performance_movs"]]
+
+#Performance
+performance = performance._append(performance_car)
+
+
+#Cartera Juntando el performance
+mercado = pd.merge(mercado, performance, on=["ID", "Portafolio"], how="left")
+mercado = mercado.drop_duplicates(subset=["ID", "Portafolio","DxV","DURACION","CONVEXIDAD","Total pesos","Total USD"]) #Seleccionamos ciertas columnas para hacer limpieza de duplicados despues del merge entre performance y cartera
+mercado = pd.merge(mercado,movs, on=["ID","Portafolio"], how="left")
+mercado.loc[mercado["Plazo"] == "Liquidity", "Performance"] = mercado["Performance_movs"]
+
+
+#Tratamiento Flujo en tránsito
+mercado = mercado._append(flujo_rsk)
+mercado[["ID"]] = mercado[["ID"]].fillna("Cash in Transit") #Nombra columna ID para identificar cashflow dentro de liquidez
+#Duracion
+mercado["DURACION"] = mercado["DURACION"].fillna(0.00277777777777778)
+#Time
+mercado.loc[mercado["ID"] == "Cash in Transit", "Time"] = "Liquidity"
+#Tasas
+mercado.loc[mercado["ID"] == "Cash in Transit", "Tasas"] = "-"
+#Plazo
+mercado.loc[mercado["ID"] == "Cash in Transit", "Plazo"] = "Liquidity"
+#Limite
+mercado.loc[mercado["ID"] == "Cash in Transit", "Limite"] = "Liquidity"
+#Performance
+mercado.loc[mercado["ID"] == "Cash in Transit", "Performance"] = 0
+
+
+#Calcula pesos y cartera final 
+weight = mercado.groupby(["Portafolio"])["Total pesos"].sum().reset_index()
+weight = weight.rename(columns={"Total pesos": "Total"}) #Cambiamos el titulo para que no choque con el total pesos de mercado
+mercado = pd.merge(mercado,weight,on="Portafolio", how="left") #Unimos con mercado
+mercado["Weight"] = mercado["Total pesos"] / mercado["Total"] #Calcula el precio de cada instrumento en su portafolio
+#Date
+mercado["Date"] = hoy_f
+#Elimina GA e IL como portafolios
+mercado = mercado[~mercado["Portafolio"].isin(["GA", "IL"])]
+#Genera la base que se quedara para hacer el merge con la base combinada de fondo y benchmark
+mercado_num = mercado[["ID","Portafolio","DURACION","CONVEXIDAD","Total pesos","Total USD","Performance","Total","Weight","Plazo"]]
+mercado_acumulado = mercado[["ID","Portafolio","Plazo","Limite","Time","Tasas","Date"]]
+
+#Cargamos base de allocation benchmark 
+####Agregamos plazo para identificar la liquidez
+
+rf = rf[["id","Tasa","Tipo"]]
+rf = rf.rename(columns={'id': 'ID'})
+pip = pip[["ID","Tasa","Tipo"]]
+rv = rv[["id","Tasa"]]
+rv = rv.rename(columns={'id': 'ID'})
+cat_bench = rf._append(pip)
+cat_bench = cat_bench._append(rv).fillna(" ")
+cat_bench["Tasas"] = cat_bench["Tasa"] +"-"+ cat_bench["Tipo"]
+
+# Asignar valores usando un loop con condiciones
+bench_all['Plazo'] = np.nan #Crea columna para llenar con el for
+for _, row in plazo.iterrows():
+    mask = (bench_all["DxV"] >= row["Inferior"]) & (bench_all["DxV"] < row["Superior"])
+    bench_all.loc[mask, ["Plazo"]] = row[["Plazo"]].values
+
+bench_all = pd.merge(bench_all,plazo,on=["Plazo"], how="left").fillna(0)
+bench_all = pd.merge(bench_all,cat_bench,on="ID",how="left")
+bench_all.loc[bench_all["DxV"] == 1, ["Time","Tasas", "Plazo","Limite"]] = "Liquidity"
+bench_all[["Time","Tasas", "Plazo","Limite"]] = bench_all[["Time","Tasas", "Plazo","Limite"]].replace(0,"-")
+bench_all.loc[bench_all["Tasa"] == "Global Equity", ["Time","Tasas", "Plazo","Limite"]] = "Global Equity"
+bench_all.loc[bench_all["Tasa"] == "Local Equity", ["Time","Tasas", "Plazo","Limite"]] = "Local Equity"
+bench_all.loc[bench_all["Plazo"].isin(["Local Equity","Global Equity" ,"Liquidity"]), "Tasas"] = "-"
+bench_all.loc[bench_all["Tasa"] == "Float", "Time"] = "Float"
+bench_all = bench_all.rename(columns={'DURACION': 'DURACION BENCH',"DELTA":"Performance bench","Peso":"Weight bench","DATE":"Date"})
+#Genera la base que se quedara para hacer el merge con la base combinada de fondo y benchmark
+bench_num = bench_all[["ID","Portafolio","DURACION BENCH","Performance bench","Weight bench","Plazo"]]
+bench_acumulado = bench_all[["ID","Portafolio","Plazo","Limite","Time","Tasas","Date"]]
+
+#CREA DATABASE FINAL INCLUYENDO FONDO Y BENCHAMRK PARA VISTA FINAL
+allocation = mercado_acumulado._append(bench_acumulado)
+allocation = allocation.drop_duplicates()
+allocation = pd.merge(allocation,mercado_num,on=["ID","Portafolio","Plazo"], how="left")
+allocation = pd.merge(allocation,bench_num,on=["ID","Portafolio","Plazo"],how="left")
+#Hace calculo para brackets de fondos, benchamrks y la diferencia
+print(allocation["Total pesos"].sum())
+print(allocation["Total USD"].sum())
+print(allocation["DURACION"].sum())
+print(allocation["CONVEXIDAD"].sum())
+print(allocation["Performance"].sum())
+print(allocation["Total"].sum())
+print(allocation["Weight"].sum())
+print(allocation["DURACION BENCH"].sum())
+print(allocation["Performance bench"].sum())
+print(allocation["Weight bench"].sum())
+
+
+
+
+
+#Breackets portafolio
+
+#Recalcular weight de acuerdo al peso relativo para lograr el attribution de duración
+mer_brack = mercado[["ID","Portafolio","Weight","DURACION","Limite"]] #Extrae las columnas que nos ayudaran a calcular los nuevos weight y duracion
+mer_brack = mer_brack[mer_brack["DURACION"] > 0] #Se queda con todo lo que tenga duracion
+mer_brack_tot = mer_brack.groupby(["Portafolio"])["Weight"].sum().reset_index() #Suma los pesos como en la parte de arriba pero ahora solo los que tienen duracion
+mer_brack = pd.merge(mer_brack,mer_brack_tot,on="Portafolio",how="left") #Junta la cartera con solo duracion, con los pesos de solo duración
+mer_brack["Weight_x"] = mer_brack["Weight_x"] / mer_brack["Weight_y"] #Divide el total de pesos para hacerlo relativo al peso total de solo los que tienen duración
+mer_brack["Total duracion"] = mer_brack["Weight_x"] * mer_brack["DURACION"] #Calcula el peso relativo por la duracion de cada instrumento
+mer_brack_dur = mer_brack.groupby(["Portafolio"])["Total duracion"].sum().reset_index() #Hace la suma por portafolio para que nos de la duración de cada fondo
+mer_brack = pd.merge(mer_brack,mer_brack_dur,on="Portafolio", how="left") #Junta la duracion de cada fondo con cada ID del fondo
+mer_brack["Attribution"] = mer_brack["Weight_x"] * mer_brack["Total duracion_y"] #Calcula el attribution para el total de duracion
+mer_brack = mer_brack[["Portafolio","Limite","Attribution"]] #Extrae las columas a utilizar
+mer_brack = mer_brack.groupby(["Portafolio","Limite"])["Attribution"].sum().reset_index() #Suma todo el limite y portafolio coincidentes que debera ser lo mismo a la duración total del fondo
+
+#Breackets Benchamrks 
+bench_brack = bench_all[["ID","Portafolio","Weight bench","DURACION BENCH","Limite"]] #Extrae las columnas que nos ayudaran a calcular nuevos pesos
+bench_brack = bench_brack[~bench_brack["Limite"].isin(["Global Equity", "Local Equity"])]#Quita equity de la clasificación
+bench_brack_tot = bench_brack.groupby(["Portafolio"])["Weight bench"].sum().reset_index() #Suma los pesos solo los que tienen duracion
+bench_brack = pd.merge(bench_brack,bench_brack_tot,on="Portafolio",how="left") #Junta los instrumentos bench con los pesos de solo duración
+bench_brack["Weight bench_x"] = bench_brack["Weight bench_x"] / bench_brack["Weight bench_y"] #Divide el total de pesos para hacerlo relativo al peso total de solo los que tienen duración
+bench_brack["Total duracion"] = bench_brack["Weight bench_x"] * bench_brack["DURACION BENCH"] #Calcula el peso relativo por la duracion de cada instrumento
+bench_brack_dur = bench_brack.groupby(["Portafolio"])["Total duracion"].sum().reset_index() #Hace la suma por portafolio para que nos de la duración de cada fondo
+bench_brack = pd.merge(bench_brack,bench_brack_dur,on="Portafolio", how="left") #Junta la duracion de cada fondo con cada ID del fondo
+bench_brack["Attribution bench"] = bench_brack["Weight bench_x"] * bench_brack["Total duracion_y"] #Calcula el attribution para el total de duracion
+bench_brack = bench_brack[["Portafolio","Limite","Attribution bench"]] #Extrae las columas a utilizar
+bench_brack = bench_brack.groupby(["Portafolio","Limite"])["Attribution bench"].sum().reset_index() #Suma todo el limite y portafolio coincidentes que debera ser lo mismo a la duración total del fondo
+
+
+#Junta Brackest de fondos y duracion por portafolio y limite
+brackets = pd.merge(mer_brack,bench_brack,on=["Portafolio","Limite"], how="left").fillna(0)
+brackets["Dif Duration"] = brackets["Attribution"] - brackets["Attribution bench"]
+brackets["Date"] = hoy_f
+
+#Acumula resultados de FONDOS, BENCHMARK, BRACKETS y FLUJO FUTURO
+
+allocat = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Guidelines_python/Asset allocation/Asset Allocation.xlsx", sheet_name="id allocation", engine='openpyxl')
+allocat["Date"] = pd.to_datetime(allocat['Date']).dt.date #Le da el formato que se usa a la columna DATE
+allocat = allocat._append(allocation)
+
+brack = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Guidelines_python/Asset allocation/Asset Allocation.xlsx", sheet_name="brackets", engine='openpyxl')
+brack["Date"] = pd.to_datetime(brack['Date']).dt.date #Le da el formato que se usa a la columna DATE
+brack = brack._append(brackets)
+
+flujo_fut = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Guidelines_python/Asset allocation/Asset Allocation.xlsx", sheet_name="flujo futuro", engine='openpyxl')
+flujo_fut["Date"] = pd.to_datetime(flujo_fut['Date']).dt.date #Le da el formato que se usa a la columna DATE
+flujo_fut = flujo_fut._append(flujo_futuro)
+
+#Manda a escribir los archivos a excel de FONDOS, BENCHMARK, BRACKETS y FLUJO FUTURO
+
+writer = pd.ExcelWriter("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Guidelines_python/Asset allocation/Asset Allocation.xlsx",engine='openpyxl')
+allocat.to_excel(writer, sheet_name="id allocation", index=False)
+brack.to_excel(writer, sheet_name="brackets", index=False)
+flujo_fut.to_excel(writer, sheet_name="flujo futuro", index=False)
+writer.close()
