@@ -1,0 +1,99 @@
+
+import pandas as pd 
+from datetime import datetime
+
+
+ruta = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Matriz_VaR/" #Ruta donde vive el catalogo factor para extranjeros 
+ruta_c = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Catalogo/"
+ruta_v = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Vector/"
+ruta_m = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Mercado/"
+
+hoy = "20251106" #Cambiar fecha de hoy para traer archivos 
+hoyy = "2025-11-06"
+actual_date = datetime.strptime(hoy, "%Y%m%d").date() #PROBAR ESTA NUEVA FORMA DE HACER LA FECHA 
+
+matriz = pd.read_excel(ruta+"Matriz"+hoyy+".xlsx")
+comp = pd.read_excel(ruta_c+"Portafolios.xlsx", sheet_name="FondosGA")
+ga = pd.read_excel(ruta_c+"Portafolios.xlsx", sheet_name="Company")
+vector = pd.read_excel(ruta_v+"VectorAnalitico"+hoy+"MD.xls", header = 1)
+
+#Trae tipo de cambio para convertir a USD
+vector.insert(0, "ID", vector["TIPO VALOR"] + "-" + vector["EMISORA"] + "-" + vector["SERIE"]) #Inserta un ID al vector
+mxn = vector.loc[vector["ID"] == "*C-MXPUSD-V48", "PRECIO SUCIO"] #Extrae el tipo de cambio SPOT del vector del día de reporte
+mxn = mxn.to_numpy() #Convierte el tipo de cambio de dataframe a vector para poder hacer calculos 
+
+
+matriz = pd.merge(matriz, comp, how = "left", on="Portafolio")
+matriz = pd.merge(matriz, ga, how = "left", on="Portafolio")
+matriz.loc[matriz['Producto'].isin(['IL', 'RC']), 'ILRC'] = 'ILRC' #Se agrega esta columna nueva para tener la combinación de los fondos IL y RC 
+matriz['ILRC'].fillna('-', inplace=True)
+#Nuevo VaR merge con cartera, 1- Multiplicar titulos por Valor, 2- Quedarnos con ID, Valor, DATE, FONDO
+#Ir fondo por fondo, oranizar de menor a mayor, calcular percentil del 5% y extraer la fecha que sale para sacar la contribución por instrumento
+
+port_total = ["RBALMXP","RCONMXP","RPROACT","PREVSM","PREVSMM","PREVSML","VISU5","VISU10","VISU20","VISU30","RPINT","RBALUSD","RCONUSD","SEGFPJ","AVECPMXP",
+              "AVECPUDIS","AVECPUSD","AVELPMXP","AVELPUDIS","AVELPUSD","CAJANYL","IMUDIS","IMUSD","LEGMXP","LEGUSD","OBVUDIS","OBVUSD","PROFMXP","PROFUSD",
+              "RBASMXP","SEGCAP","SEGREC","SEGRFMXP","SEGRFUDIS","SEGRFUSD","MIOMPUDIS","MIOLPUDIS","SEGFA","SEGCP","SEGSUR"]
+#"PROFUSD"
+    
+port_ilrc = ["ILRC"] 
+port_ga = ["GA"]
+matriz["Valor"] = matriz["Títulos"] * matriz["Valor"]
+
+def var(column, port):
+    df_acumulado = pd.DataFrame()
+
+    for portafolio in port:
+        prueb = matriz[matriz[column] == portafolio]
+
+        if prueb.empty:
+            print(f"Portafolio '{portafolio}' se omite.")
+            continue
+
+        oper = (
+            prueb.groupby("HOLDING (PiP)", as_index=False)["Valor"]
+                 .sum()
+        )
+
+        if oper.empty:
+            print(f" Portafolio '{portafolio}' se omite.")
+            continue
+
+        df_ordenado = oper.sort_values(by='Valor')
+
+        if len(df_ordenado) < 3:
+            print(f" Portafolio '{portafolio}' se omite.")
+            continue
+
+        percentil = df_ordenado['Valor'].quantile(0.01)
+        p = df_ordenado.iloc[2, 1]  # Puedes cambiar esto si quieres usar el percentil real
+        fila = oper.loc[oper['Valor'] == p]
+        fila = fila["HOLDING (PiP)"]
+        cont = pd.merge(prueb, fila, on="HOLDING (PiP)", how="inner")
+        df_acumulado = pd.concat([df_acumulado, cont], ignore_index=True)
+        df_acumulado = df_acumulado[["ID", column, "Valor"]]
+
+    return df_acumulado
+
+
+
+tot = var("Portafolio", port_total)
+ga = var("Company", port_ga)
+ga = ga.rename(columns={"Company":"Portafolio"})
+ilrc = var("ILRC", port_ilrc)
+ilrc = ilrc.rename(columns={"ILRC":"Portafolio"})
+
+result = tot._append(ga)
+result = result._append(ilrc)
+result["Valor"] = result["Valor"] * - 1
+result["Date"] = actual_date
+result["Valor USD"] = result["Valor"] / mxn
+
+
+df = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Guidelines_python/VaR/VaR.xlsx", sheet_name="VaR", engine='openpyxl')
+df["Date"] = pd.to_datetime(df['Date']).dt.date #Le da el formato que se usa a la columna DATE
+df = df._append(result)  #### Esta es la base que se acumula para los indices de benchmark 
+
+
+writer = pd.ExcelWriter("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Guidelines_python/VaR/VaR.xlsx",engine='openpyxl' )
+df.to_excel(writer, sheet_name="VaR", index=False)
+writer.close()
