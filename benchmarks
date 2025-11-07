@@ -1,0 +1,428 @@
+#CARGA DE LIBRERIAS 
+
+import pandas as pd 
+import os as os 
+import numpy as np
+from datetime import datetime
+from openpyxl import load_workbook
+
+ruta_c = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Catalogo/" #Ruta donde vive el catalogo de benchmark
+ruta_v = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Vector/" #Ruta donde viven los vectores 
+ruta_md = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Mismo_dia/" #Ruta donde viven los indices mismo día de PiP 
+ruta_p = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Precios/"
+ruta_f = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Movimiento/"
+
+#CARGA DE INPUTS 
+
+hoy = "20251106"  #Cambiar fecha de hoy para traer archivos 
+hoyy = "2025-11-06"
+ayer = "20251105" #Cambiar fecha de ayer para traer archivos
+ayerr = "2025-11-05"
+actual_date = pd.to_datetime(hoy, format="%Y%m%d")
+ant_date = pd.to_datetime(ayer, format="%Y%m%d")  #PROBAR ESTA NUEVA FORMA DE HACER LA FECHA 
+#actual_date = datetime.strptime(hoy, "%Y%m%d").date() #PROBAR ESTA NUEVA FORMA DE HACER LA FECHA 
+#ant_date = datetime.strptime(ayer, "%Y%m%d").date()  #PROBAR ESTA NUEVA FORMA DE HACER LA FECHA 
+dif_date = (actual_date - ant_date).days 
+fee = (((1+0.0025) ** (1/250))-1)   #Comisión diaria para el NAFTRAC en porcentaje 
+
+# ESTO SE USA SI SE CALCULA EL FEE AL PRECIO, PERO ES AL PRECIO O RENDIMIENTO DEL NAFTRAC??? 
+#dias_t = actual_date - bef_date #Hace la diferencia para tener los días trancurridos entre el reporte de hoy y ayer
+#dias_t = dias_t.days #Convierte la diferencia de fechas a días para poder hacer operaciones 
+
+
+rf = pd.read_excel(ruta_c+"Catalogo_bench.xlsx", sheet_name= "RF") #Ruta + nombre de archivo + hoja a leer 
+rv = pd.read_excel(ruta_c+"Catalogo_bench.xlsx", sheet_name= "RV") #Ruta + nombre de archivo + hoja a leer 
+pip = pd.read_excel(ruta_c+"Catalogo_bench.xlsx", sheet_name= "PiP") #Ruta + nombre de archivo + hoja a leer 
+vector = pd.read_excel(ruta_v+"VectorAnalitico"+hoy+"MD.xls", header = 1) #Ruta + nombre de archivo + fecha 
+vector_ant = pd.read_excel(ruta_v+"VectorAnalitico"+ayer+"MD.xls", header = 1) #Ruta + nombre de archivo + fecha
+md =  pd.read_excel(ruta_md+"Indices_MD"+hoy+".xls", header = 2) #Ruta + nombre de archivo + fecha
+md = md.rename(columns={"Nombre":"ID"}) #Renombra la columna on ID para poder ejecutar merge  
+md_1 =  pd.read_excel(ruta_md+"Indices_MD"+ayer+".xls", header = 2) #Ruta + nombre de archivo + fecha
+md_1 = md_1.rename(columns={"Nombre":"ID"}) #Renombra la columna con ID para poder utilizar merge 
+p = pd.read_excel(ruta_p+"SolPrecios"+" "+hoyy+".xls") #Llama a los precios por de portafolio soluciones 
+p_1 = pd.read_excel(ruta_p+"SolPrecios"+" "+ayerr+".xls")
+fee = pd.read_excel(ruta_c+"Fee.xlsx")
+w = pd.read_excel(ruta_c+"W.xlsx", header = 1) #Llama al catalogo de pesos de cada instrumento en el benchmark
+w = w.fillna(0) #Rellena los NA con 0 
+dividendos = pd.read_excel(ruta_c+"Dividendos"+".xlsx") #Mando a llamar el catalogo de dividendos 
+
+#EXTRAE TIPOS DE CAMBIO 
+
+vector.insert(0, "ID", vector["TIPO VALOR"] + "-" + vector["EMISORA"] + "-" + vector["SERIE"]) #Inserta un ID al vector
+vector_ant.insert(0, "ID", vector_ant["TIPO VALOR"] + "-" + vector_ant["EMISORA"] + "-" + vector_ant["SERIE"]) #Inserta ID al vector del día anterior 
+mxn = vector.loc[vector["ID"] == "*C-MXPUSD-V48", "PRECIO SUCIO"] #Extrae el tipo de cambio SPOT del vector del día de reporte
+mxn = mxn.to_numpy() #Convierte el tipo de cambio de dataframe a vector para poder hacer calculos 
+mxn_1 = vector_ant.loc[vector_ant["ID"] == "*C-MXPUSD-V48", "PRECIO SUCIO"] #Extrae el tipo de cambio SPOT del vector anterior 
+mxn_1 = mxn_1.to_numpy() #Lo convierte a vector para poder hacer calculos
+conddtc = (actual_date - ant_date).days
+
+#TRATAMIENTO RENTA FIJA EN BENCHMARK    ### REVISAR CALCULO ##
+
+drf = pd.merge(rf, vector, on= "ID", how= "inner") #Hace la unión entre el cátalogo de renta fija y vector 
+drf = drf[["ID","PRECIO SUCIO", "BMV", "INTERESES ACUMULADOS"]] #Extrae solo ciertas columnas del merge realizado
+
+drf["PRECIO SUCIO"]  = np.where((drf["BMV"] == "D1SP") | (drf["BMV"] == "D5SP") | (drf["BMV"] == "D4SP"), drf["PRECIO SUCIO"] /mxn, #Convierte los precios actuales a su moneda 
+                       drf["PRECIO SUCIO"]) #LOS D1 y D5 se cambian a su moneda
+
+drf["INTERESES ACUMULADOS"]  = np.where((drf["BMV"] == "D1SP") | (drf["BMV"] == "D5SP") | (drf["BMV"] == "D4SP"), drf["INTERESES ACUMULADOS"] /mxn, #Convierte los precios de ayer a su moneda 
+                       drf["INTERESES ACUMULADOS"]) #LOS D1 y D5 en interes se cambian a su moneda para poder realizar los calculos
+
+
+
+drf_1 = pd.merge(rf, vector_ant, on= "ID", how= "inner") #Hce la unión entre el cátalogo de renta fija y el vector anterior 
+
+drf_1["PRECIO t-1"]  = np.where((drf_1["BMV"] == "D1SP") | (drf_1["BMV"] == "D5SP") | (drf_1["BMV"] == "D4SP"), drf_1["PRECIO SUCIO"] /mxn_1, #Convierte los precios de ayer a su moneda 
+                       drf_1["PRECIO SUCIO"]) #LOS D1 y D5 del día anterior ya los puedo pasar a pesos ya que no debo de sumarle ningún cupón 
+#drf_1 = drf_1.rename(columns={"INTERESES ACUMULADOS":"INTERESES ACUMULADOS t-1"})
+
+drf_1["INTERESES ACUMULADOS t-1"]  = np.where((drf_1["BMV"] == "D1SP") | (drf_1["BMV"] == "D5SP") | (drf_1["BMV"] == "D4SP"), drf_1["INTERESES ACUMULADOS"] /mxn_1, #Convierte los precios de ayer a su moneda 
+                       drf_1["INTERESES ACUMULADOS"]) #LOS D1 y D5 del día anterior debo pasarlos a dólares para que cumpla la condición y poder sumar el interés 
+
+#Prepara información para crear el factor
+drf_1 = drf_1[["ID", "INTERESES ACUMULADOS t-1", "PRECIO t-1","DIAS TRANSC. CPN"]] #Extrae ciertas columnas del merge realizado para el día anterior 
+drf_1["DIAS TRANSC. CPN"] = drf_1[["DIAS TRANSC. CPN"]].fillna(0)
+drf_1["FACTOR"] = (drf_1["INTERESES ACUMULADOS t-1"]    / drf_1["DIAS TRANSC. CPN"]) #Calcula el factor que falta para completar el cupón 
+drf_1["FACTOR"] = drf_1["FACTOR"].fillna(0) #Cambia los NA por 0 en la columna factor 
+#Hace los calculos para sumar interés al precio cuando existe corte cupon
+drf = pd.merge(drf, drf_1, on= "ID", how= "inner") #Hace merge entre el precio del día de hoy y el de ayer 
+
+
+drf["INTERESES"]  = np.where((drf["INTERESES ACUMULADOS"] < drf["INTERESES ACUMULADOS t-1"]), drf["INTERESES ACUMULADOS t-1"] + drf["FACTOR"],
+                       drf["INTERESES ACUMULADOS t-1"]) #Hace triple condición que indica si son D5 o D1 y "DIAS TRANSC. CPN" = 0 se suman los intereses al factor que fue calculado 
+
+
+#drf["INTERESES"]  = np.where((drf["BMV"] == "D1SP") | (drf["BMV"] == "D5SP") | (drf["BMV"] == "D4SP"), drf["INTERESES"] /mxn, #Convierte los precios de ayer a su moneda 
+                       #drf["INTERESES"]) #LOS D1 y D5 en interes se cambian a su moneda para poder realizar los calculos
+
+
+drf["PRECIO"]  = np.where((drf["INTERESES ACUMULADOS"] < drf["INTERESES ACUMULADOS t-1"]), drf["PRECIO SUCIO"] + drf["INTERESES"],
+                       drf["PRECIO SUCIO"]) #Crea la condición para sumar corte cupón al precio sucio del día de reporte
+
+
+drf=  drf[["ID","PRECIO", "PRECIO t-1", "BMV"]] #Precio + corte cupón de hoy, Precio de ayer y tipo valor  
+
+
+drf["DELTA"] = drf["PRECIO"] / drf["PRECIO t-1"] -1 #Calculamos rendimiento diario 
+drf_p = drf[["ID", "PRECIO"]] #DEJO PRECIOS DE HOY 
+drf_i = drf[["ID", "DELTA"]] #DEJO RENDIMIENTOS DE HOY 
+
+#CALCULO SOFR
+sofr = drf_p.loc[(drf_p['ID'] == 'RC-SOFR-T-1'), 'PRECIO'] #trae la tasa SOFR del día a reportar
+drf_i.loc[(drf_i['ID'] == 'RC-SOFR-T-1'), 'DELTA'] = ((sofr/100)/360)*dif_date #identifica el valor del SOFR y lo cambia por el valor que ocupamos del cambio diario de SOFR
+
+#CALCULO TIIE28
+tiie = drf_p.loc[(drf_p['ID'] == 'RC-TIIE-T28'), 'PRECIO'] #trae la tasa SOFR del día a reportar
+drf_i.loc[(drf_i['ID'] == 'RC-TIIE-T28'), 'DELTA'] = (((tiie-0.05)/100)/360)*dif_date #identifica el valor del SOFR y lo cambia por el valor que ocupamos del cambio diario de SOFR
+
+
+#SolPrecios 2023-11-29
+
+#TRATAMIENTO RENTA VARIABLE EN BENCHMARK    ### REVISAR CALCULO PARA EL FEE ##
+
+#Definir funcion para dividendo y define cátalogo de dividendos
+
+def verifica_dividendo(df): #Los dividendos se capturan en pesos (tipo de cambio spot del día de dividendo) en el catálogo y los que no paguen se pone 0
+    # Verifica si el DataFrame extraído está completamente vacío
+    if df.empty:
+        # Si está vacío, crea un DataFrame con una fila de ceros para cada columna
+        df.loc[0] = [0] * len(df.columns)
+
+    return df
+
+#Definir funcion para acumular precio benchmark
+
+def FVSCHEDULE(tasas):
+    valor_futuro = 1
+    for tasa in tasas:
+        valor_futuro *= (1 + tasa)
+    return valor_futuro
+
+
+drv = pd.merge(rv, vector, on= "ID", how= "inner") #Hace la unión entre el cátalogo de renta variable y vector 
+drv = drv.rename(columns={"PRECIO SUCIO":"PRECIO"}) #Cambiamos nombre al nombre general
+drv = drv[["id","ID","PRECIO"]] #Extrae sólo las columnas a utilizar
+
+dividendo1 = dividendos.loc[dividendos["DATE"] == hoy, dividendos.columns[1:]]
+dividendo = verifica_dividendo(dividendo1) 
+dividendo = dividendo.T #Transpone el dataframe 
+dividendo = dividendo.reset_index() #Resetea el index para reordenar las columnas 
+
+dividendo.columns = ["ID", "DIVIDENDO"] #Le cambia el nombre a las columnas para poder concatenar con los precios 
+
+drv = pd.merge(drv, dividendo, on= "ID", how= "inner") #Hace la unión entre el cátalogo de renta variable y vector 
+drv["PRECIO"] = drv["PRECIO"] + drv["DIVIDENDO"] #Suma el dividendo al precio (IMPORTANTE ¡EN PESOS!)
+
+dusd = drv[["id","ID", "PRECIO"]] #Extrae las columnas de ID y PRECIO de drv para pasarlos a USD
+dusd["PRECIO"] = dusd["PRECIO"] / mxn #Hace la conversión a USD  con el tipo de cambio de hoy 
+
+#drv_1["PRECIO t-1"]  = np.where(drv_1["ID"] == "1B-NAFTRAC-ISHRS", (drv_1["PRECIO t-1"]*(1+fee)**(dias_t)), drv_1["PRECIO t-1"])
+#drv["PRECIO"]  = np.where(drv["ID"] == "1B-NAFTRAC-ISHRS", (drv["PRECIO"]*(1+fee)**(dias_t)), drv["PRECIO"]) #Se le regresa la comisión a NAFTRAC para el precio del día de reporte
+
+drv_1 = pd.merge(rv, vector_ant, on= "ID", how= "inner") #Junta el caátalogo de renta variable con el vector del día anterior 
+drv_1 = drv_1.rename(columns={"PRECIO SUCIO":"PRECIO t-1"}) #Le cambiamos el nombre al precio de ayer  
+drv_1 = drv_1[["ID", "PRECIO t-1"]] #Se queda con ID y precio de ayer 
+
+drv = pd.merge(drv, drv_1, on= "ID", how= "inner") #Junta precio de hoy y precios de ayer para poder calcular el rendimiento  
+drv = drv[["ID", "PRECIO", "PRECIO t-1"]] #Nos quedamos con las columnas que vamos a utilizar, el id en minusculas es para el catalogo del allocation y attribution
+drv ["DELTA"] = drv["PRECIO"] / drv["PRECIO t-1"] -1 #Hace la diferencia entre precios de hoy vs los de ayer para calcular los rendimientos 
+drv =  drv.drop(columns = "PRECIO t-1") #Elimina la columna del precio de ayer  
+drv_p = drv[["ID", "PRECIO"]] #Crea la variable de precio 
+drv_i = drv[["ID", "DELTA"]] #Crea la variable de rendimiento 
+
+
+
+
+# CONVERTIR DRV_1 A DOLARES (DRV1 ES MIS PRECIOS EN PESOS DE AYER)
+dusd_1 = drv_1[["ID", "PRECIO t-1"]] #Extrae sólo ID y los precios de ayer  
+dusd_1["PRECIO t-1"] = dusd_1["PRECIO t-1"] / mxn_1 #Divide precios de ayer entre tipo de cambio de ayer SPOT 
+
+
+# HACEMOS MERGE DE DÓLARES
+dusd = pd.merge(dusd, dusd_1, on= "ID", how= "inner") #Junta los precios de hoy vs los de ayer en USD  
+dusd["DELTA"] = dusd["PRECIO"] / dusd["PRECIO t-1"] -1 #Divide precios de hoy vs ayer para calcular rendimientos
+dusd = dusd.drop(columns = "PRECIO t-1") #Elimina los precios de ayer 
+
+
+dusd.replace({"ID": {"1B-NAFTRAC-ISHRS": "1B-NAFTRAC-ISHRS-USD", "1ISP-IVV-*": "1ISP-IVV-USD", 
+                       "1ISP-EFA-*": "1ISP-EFA-USD", "1ISP-EWY-*": "1ISP-EWY-USD", 
+                       "1ISP-MCHI-*": "1ISP-MCHI-USD", "1ISP-EWZ-*": "1ISP-EWZ-USD",
+                       "1ISP-ACWI-*":"1ISP-ACWI-USD"}}, inplace = True) #Renombra los instrumentos para poder trabajar con los precios en usd y mxn 
+
+
+
+rv_allocation_usd = dusd[["id","ID"]] #Para cambiar los instrumentos en usd renta varible
+dusd_p = dusd[["ID", "PRECIO"]] #Se queda con los precios 
+dusd_i = dusd[["ID", "DELTA"]] #Se queda con los rendimientos 
+
+
+# TRATAMIENTO DE INDICES PARA BENCHMARK 
+
+
+mismodia=  pd.merge(pip, md, on= "ID", how= "inner") #Une catálogo de pip con archivo de mismo día 
+mismodia = mismodia[["ID", "Valor del índice MD "]] #Extrae sólo las columnas que se van a ocupar 
+mismodia = mismodia.rename(columns={"Valor del índice MD ":"PRECIO"}) #Renombra la columna por el nombre general 
+
+
+mismodia_1 = pd.merge(pip, md_1, on= "ID", how= "inner") #Une catálogo mismo día con el archivo mismo día del día anterior 
+mismodia_1 = mismodia_1[["ID", "Valor del índice MD "]] #Extrae sólo las columnas que se van a ocupar  
+mismodia_1 = mismodia_1.rename(columns={"Valor del índice MD ":"PRECIO t-1"}) #Renombra la columna por el precio del día anterior 
+
+
+mismodia = pd.merge(mismodia, mismodia_1, on= "ID", how= "inner") #Hace merge para juntar los precios de hoy con los precios del día anterior 
+mismodia["DELTA"] = mismodia["PRECIO"] / mismodia["PRECIO t-1"] -1 #Hace la división para calcular el rendimiento diario 
+
+
+mismodia_p = mismodia[["ID", "PRECIO"]] #Extrae el ID y el precio del día de reporte 
+mismodia_i = mismodia[["ID", "DELTA"]] #Extrae ID y rendimiento del día de reporte 
+
+
+
+
+#ACUMULACION DE PRECIOS BENCHMARK 
+
+pre = mismodia_p._append(drv_p) #Agrega renta variable a mismo día 
+pre = pre._append(dusd_p) #Agrega renta variable USD a mismo día y renta variable MXN 
+pre = pre._append(drf_p) #Agrega renta fija 
+
+
+
+pre.insert(0, "DATE", actual_date) #Inserta una columna con la fecha actual 
+pre["DATE"] = pd.to_datetime(pre['DATE']).dt.date #Cambia el formato de fecha de la columna DATE  
+
+
+
+#ACUMULACION DE RENDIMIENTOS BENCHMARK 
+
+pre_i = mismodia_i._append(drv_i) #Agrega rendimientos renta variable a mismo día 
+pre_i = pre_i._append(dusd_i) #Agrega rendimientos renta variable USD  
+pre_i = pre_i._append(drf_i) #Agrega los rendimientos de renta fija  
+
+pre_i.insert(0, "DATE", actual_date) #Inserta la fecha del día de reporte 
+pre_i["DATE"] = pd.to_datetime(pre_i['DATE']).dt.date #Cambia el formato de la DATE  
+
+
+
+  
+
+#CALCULA EL CAMBIO DIARIO DE PORTAFOLIOS
+
+weight = pd.merge(pre_i, w, on= "ID", how = "inner") #Hace el merge entre el cambio diario de los instrumentos con el catalogo de los pesos del benchmark
+
+def sumaproducto(df, columna, columnas): #Genera la función que realiza la sumaproducto por fondo 
+    result = {}
+    for col in columnas:
+        result[col] = (df[columna] * df[col]).sum()
+    df_result = pd.DataFrame(result, index=[0])
+    return df_result
+
+
+resultados = sumaproducto(weight, "DELTA", weight.iloc[:, 3:])
+resultados.insert(0, "Date", actual_date) #Inserta la fecha del día de reporte 
+resultados["Date"] = pd.to_datetime(resultados['Date']).dt.date #Cambia el formato de la DATE  
+resultados = resultados.melt(id_vars='Date', var_name='Fondo', value_name='Valor')
+
+
+######################################### PRECIOS SOLUCIONES ##################################################
+
+precio = p[["Fecha det", "Portafolio", "Precio"]]
+precio["Fecha det"] = pd.to_datetime(precio['Fecha det']).dt.date #Cambia el formato de la DATE 
+
+precio_1 = p_1[["Portafolio","Precio"]]
+precio_1 = precio_1.rename(columns={"Precio":"Precio t-1"})
+
+precio = pd.merge(precio, precio_1, on= "Portafolio", how= "inner") 
+
+
+precio["Delta"] = precio["Precio"] / precio["Precio t-1"] -1
+
+precio_p = precio[["Fecha det", "Portafolio","Precio" ]]
+precio_p = precio_p.rename(columns={"Fecha det":"Date"})
+precio_i = precio[["Fecha det", "Portafolio", "Delta"]]
+precio_i = precio_i.rename(columns={"Fecha det":"Date"})
+precio_i = pd.merge(precio_i,fee, on="Portafolio", how="inner") #REVISAR ESTA PARA QUE DEJE CAJANYL 
+precio_i["Delta Fee"] = (precio_i["Delta"]+((precio_i["Fee"])/360)*dif_date)
+
+precioi = precio_i[["Date","Portafolio","Delta"]] #PRECIO SOLUCIONES NETO (DESPUÉS DE FEE)
+preciof = precio_i[["Date","Portafolio","Delta Fee"]] #SE AGREGA EL FEE PARA HACER EL PRECIO BRUTO
+
+
+
+############################### TRABAJAR DURACIONES (VALIDANDO MISMO DÍA O 24HRS)  ##########################################
+
+#BONOS
+
+bond_dur = pd.merge(drf, vector, how = "inner") 
+bond_dur = bond_dur[["ID", "DURACION", "DIAS TRANSC. CPN", "TIPO VALOR"]]
+#bond_dur =bond_dur.drop([0,1]) #Elimina la fila 0 y 1 que son los tipos de cambio (spot - udi)
+bond_dur["DURACION"] = bond_dur["DURACION"].replace("-", 0) #Convierte la columna duración en float
+#bond_dur["DURACION"] = bond_dur["DURACION"].astype(float)
+#bond_dur["DIAS TRANSC. CPN"] = bond_dur["DIAS TRANSC. CPN"].astype(float)
+bond_dur["DIAS TRANSC. CPN"] = bond_dur["DIAS TRANSC. CPN"].fillna(0) #Convierte la columna días transcurridos cupón en float
+bond_dur["DURACION"]  = np.where((bond_dur["TIPO VALOR"] == "LD") | (bond_dur["TIPO VALOR"] == "LF") | (bond_dur["TIPO VALOR"] == "LG"),
+                       (28-bond_dur["DIAS TRANSC. CPN"])/360, bond_dur["DURACION"]) #Calcula duración para flotantes
+
+bond_dur.loc[(bond_dur['ID'] == 'RC-SOFR-T-1'), 'DURACION'] = 1/360 #identifica el valor del SOFR y lo cambia por el valor de su duración 
+
+bond_dur = bond_dur[["ID", "DURACION"]]
+
+
+#PiP
+
+pip_dur = pd.merge(pip, md, on = "ID", how = "inner")
+pip_dur = pip_dur.rename(columns={"Duración":"DURACION"})
+pip_dur = pip_dur[["ID", "DURACION"]]
+
+
+#JUNTA AMBAS DURACIONES
+
+dur = bond_dur._append(pip_dur)
+
+
+#CALCULA EL CAMBIO DIARIO DE DURACIONES DE PORTAFOLIOS
+
+dur = pd.merge(w, dur, on = "ID", how = "inner")
+nueva_fila = dur.iloc[:, 1:-1].sum().to_frame().T #Suma el total de cada portafolio 
+dur_b = sumaproducto(dur, "DURACION", dur.iloc[:, 1:-1]) #Aplica la función sumaproducto y con el iloc indica que tome todas las filas y apartir de la columna 1 y antes de la útlma columna
+dur_b = dur_b / nueva_fila
+dur_b = dur_b.fillna(0) #Si hay algún nan lo pone 0 para que escriba algo en excel 
+dur_b.insert(0, "Date", actual_date) #Inserta la fecha del día de reporte 
+dur_b["Date"] = pd.to_datetime(dur_b['Date']).dt.date #Cambia el formato de la DATE  
+
+dur_b = dur_b.melt(id_vars='Date', var_name='Fondo', value_name='Valor')
+
+
+#TRATAMINETO PARA GENERAR DXV DE LOS BENCHMARK PARA EL ALLOCATION
+
+allocation = weight.melt(id_vars=["DATE",'ID',"DELTA"], var_name='Portafolio',value_name='Peso')
+allocation = allocation[allocation["Peso"] > 0]
+durall = dur.melt(id_vars=['ID',"DURACION"], var_name='Portafolio',value_name='Peso')
+durall = durall[durall["Peso"] > 0]
+durall = durall[["ID","DURACION","Portafolio"]]
+allocation = pd.merge(allocation,durall,on=["ID","Portafolio"], how="left").fillna(0)
+allocation = pd.merge(allocation, pip, on="ID", how="left").fillna(0)
+allocation = allocation[["DATE","ID", "Portafolio","DELTA","Peso", "DURACION", "DxV"]]
+
+#TRATAMINETO DE LA DATA EN GENERAL
+durallocation = dur.melt(id_vars=['ID',"DURACION"], var_name='Portafolio',value_name='Peso')
+durallocation = durallocation[durallocation["Peso"] > 0]
+durallocation = pd.merge(durallocation, pre_i, on="ID", how="inner")
+durallocation = pd.merge(durallocation, pip, on="ID", how="left")
+durallocation = durallocation[["ID", "DATE", "Portafolio", "DURACION", "DELTA", "DxV"]]
+durallocation["DxV"] = durallocation["DxV"].fillna(0)
+
+
+#DxV VECTOR
+dxv = pd.merge(vector, rf, on= "ID", how= "inner") #Hace merge entre la cartera y el catalogo 
+dxv = dxv.drop_duplicates(subset="ID") 
+dxv["FECHA VCTO"] = pd.to_datetime(dxv['FECHA VCTO'], errors="coerce")
+dxv["DxV_V"] = (dxv["FECHA VCTO"] - actual_date).dt.days
+dxv = dxv[["ID", "DxV_V"]]
+dxv = dxv.fillna(1)
+
+#REMPLAZA LOS DXV vector EN EL DURALLOCATION
+allocation = pd.merge(allocation, dxv, on="ID", how= "left")
+allocation['DxV'] = allocation['DxV_V'].combine_first(allocation['DxV'])
+allocation = allocation.drop("DxV_V", axis=1)
+
+#REMPLAZAR ID PARA PODER MATCH CON FONDOS EN ALLOACTION
+rf_allocation = rf[["id","ID"]]
+rv_allocation = rv[["id","ID"]]
+id_all = rf_allocation._append(rv_allocation)
+id_all = id_all._append(rv_allocation_usd)
+
+#Allocation final a acumular
+allocation = pd.merge(allocation,id_all,on="ID",how="left")
+allocation["ID"] = allocation['id'].combine_first(allocation['ID'])
+allocation = allocation.drop(columns=['id'])
+
+##################################### LEO EL ARCHIVO Y LO ACUMULO CON APPEND ##############################################
+######## ESTA ES LA BASE ORIGINAL 
+
+#EN ESTA PARTE AGREGO LOS INSTRUMENTOS Y CAMBIO LO DEL PRECIO DEL FEE
+
+resul_tab = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/bench_new1.xlsx", sheet_name="Indice Bench", engine='openpyxl')
+resul_tab["Date"] = pd.to_datetime(resul_tab['Date']).dt.date #Le da el formato que se usa a la columna DATE
+resul_tab = resul_tab._append(resultados)  #### Esta es la base que se acumula para los indices de benchmark 
+
+precio_tab = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/bench_new1.xlsx", sheet_name="Precios Fondos", engine='openpyxl')
+precio_tab["Date"] = pd.to_datetime(precio_tab['Date']).dt.date #Le da el formato que se usa a la columna DATE
+precio_tab = precio_tab._append(precio_p)
+
+precioi_tab = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/bench_new1.xlsx", sheet_name="Rendimiento Fondos", engine='openpyxl')
+precioi_tab["Date"] = pd.to_datetime(precioi_tab['Date']).dt.date #Le da el formato que se usa a la columna DATE
+precioi_tab = precioi_tab._append(precioi)
+
+preciof_tab = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/bench_new1.xlsx", sheet_name="Rendimiento Fondos FEE", engine='openpyxl')
+preciof_tab["Date"] = pd.to_datetime(preciof_tab['Date']).dt.date #Le da el formato que se usa a la columna DATE
+preciof_tab = preciof_tab._append(preciof)
+
+
+dur_tab = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/bench_new1.xlsx", sheet_name="Duracion", engine='openpyxl')
+dur_tab["Date"] = pd.to_datetime(dur_tab['Date']).dt.date #Le da el formato que se usa a la columna DATE
+dur_tab = dur_tab._append(dur_b)
+
+p_tab = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/bench_new1.xlsx", sheet_name="P Instrumentos", engine='openpyxl')
+p_tab["DATE"] = pd.to_datetime(p_tab['DATE']).dt.date #Le da el formato que se usa a la columna DATE
+p_tab = p_tab._append(pre)
+
+
+i_tab = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/bench_new1.xlsx", sheet_name="R Instrumentos", engine='openpyxl')
+i_tab["DATE"] = pd.to_datetime(i_tab['DATE']).dt.date #Le da el formato que se usa a la columna DATE
+i_tab = i_tab._append(pre_i)
+
+benchallocation = pd.read_excel("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/bench_new1.xlsx", sheet_name="benchallocation", engine='openpyxl')
+benchallocation["DATE"] = pd.to_datetime(benchallocation['DATE']).dt.date #Le da el formato que se usa a la columna DATE
+benchallocation = benchallocation._append(allocation)
+
+
+
+writer = pd.ExcelWriter("C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/bench_new1.xlsx",engine='openpyxl' )
+resul_tab.to_excel(writer, sheet_name="Indice Bench", index=False)
+precio_tab.to_excel(writer, sheet_name="Precios Fondos", index=False)
+precioi_tab.to_excel(writer, sheet_name="Rendimiento Fondos", index=False)
+preciof_tab.to_excel(writer, sheet_name="Rendimiento Fondos FEE", index=False)
+dur_tab.to_excel(writer, sheet_name="Duracion", index=False)
+p_tab.to_excel(writer, sheet_name="P Instrumentos", index=False)
+i_tab.to_excel(writer, sheet_name="R Instrumentos", index=False)
+benchallocation.to_excel(writer, sheet_name="benchallocation", index=False)
+writer.close()
