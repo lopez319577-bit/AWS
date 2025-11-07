@@ -1,0 +1,51 @@
+%idle_timeout 10
+%glue_version 3.0
+%worker_type G.1X
+%number_of_workers 5
+
+import sys
+from awsglue.transforms import *
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from datetime import datetime
+from pyspark.sql import functions as F
+from awsglue.dynamicframe import DynamicFrameCollection
+from awsglue.dynamicframe import DynamicFrame
+import pandas as pd 
+import numpy as np
+from datetime import datetime
+from pyspark.sql.functions import year, month, dayofmonth, to_date
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import DecimalType, IntegerType, StringType, LongType
+    
+sc = SparkContext.getOrCreate()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+
+
+
+fecha = glueContext.create_dynamic_frame.from_catalog(database='bd_inversiones_workspace', table_name='stg_d_inv_precios')
+fecha.toDF().createOrReplaceTempView('fecha')
+qfecha =spark.sql("select fech_proceso from fecha").dropDuplicates() 
+fecha = qfecha.toPandas()
+
+
+
+rv = glueContext.create_dynamic_frame.from_catalog(database='bd_inversiones_workspace', table_name='stg_d_inv_renta_variable')
+rv.toDF().createOrReplaceTempView('rv')
+qrv =spark.sql("select id_d,id, nb_bmv, nb_emisora, nb_serie,nb_tasa from rv") 
+rv = qrv.toPandas()
+
+
+
+vector_hoy = glueContext.create_dynamic_frame.from_catalog(database='bd_inversiones_workspace', table_name='stg_d_inv_vector')
+vector_hoy.toDF().createOrReplaceTempView('vector_hoy')
+qvector_hoy =spark.sql("select nb_tipo_valor, nb_emisora, nb_serie,imp_precio_sucio,imp_intereses_acumulados, nu_dias_transc_cpn, imp_duracion,imp_convexidad,fh_fecha_vencimiento,fh_fecha_emision,nu_cupones_emision,fech_proceso from vector_hoy where fech_proceso = date('"+str(hoy)+"')") 
+vector_hoy = qvector_hoy.toPandas()
+vector_hoy.insert(0, "id", vector_hoy["nb_tipo_valor"] + "-" + vector_hoy["nb_emisora"] + "-" + vector_hoy["nb_serie"]) #Inserta un ID al vector
+columns = ["imp_precio_sucio","imp_intereses_acumulados","imp_duracion","imp_convexidad"]
+vector_hoy[columns] = vector_hoy[columns].apply(pd.to_numeric, errors="coerce")
