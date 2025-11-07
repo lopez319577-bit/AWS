@@ -1,0 +1,204 @@
+import sys
+from awsglue.transforms import *
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from awsglue.dynamicframe import DynamicFrameCollection
+from awsglue.dynamicframe import DynamicFrame
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
+import datetime
+import boto3,time
+import pandas as pd
+from pyspark.sql import functions as F
+  
+args = getResolvedOptions(sys.argv, ["JOB_NAME"])
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+job.init(args['JOB_NAME'], args)
+
+table_schema = StructType([StructField("fech_proceso", StringType(), False),
+                           StructField("nb_tipo_valor", StringType(), False),
+                           StructField("nb_emisora", StringType(), False),
+                           StructField("nb_serie", StringType(), False),
+                           StructField("imp_precio_limpio", StringType(), False),
+                           StructField("imp_precio_sucio", StringType(), False),
+                           StructField("imp_intereses_acumulados", StringType(), False),
+                           StructField("imp_cupon_actual", StringType(), False),
+                           StructField("imp_sobretasa", StringType(), False),
+                           StructField("nb_nombre_completo", StringType(), False),
+                           StructField("nb_sector", StringType(), False),
+                           StructField("imp_monto_emitido", StringType(), False),
+                           StructField("imp_monto_en_circulacion", StringType(), False),
+                           StructField("fh_fecha_emision", StringType(), False),
+                           StructField("nu_plazo_emision", StringType(), False),
+                           StructField("fh_fecha_vencimiento", StringType(), False),
+                           StructField("imp_valor_nominal", StringType(), False),
+                           StructField("nb_moneda_emision", StringType(), False),
+                           StructField("nb_subyacente", StringType(), False),
+                           StructField("imp_rend_colocacion", StringType(), False),
+                           StructField("imp_st_colocacion", StringType(), False),
+                           StructField("nb_frec_cpn", StringType(), False),
+                           StructField("imp_tasa_cupon", StringType(), False),
+                           StructField("nu_dias_transc_cpn", StringType(), False),
+                           StructField("nb_regla_cupon", StringType(), False),
+                           StructField("nu_cupones_emision", StringType(), False),
+                           StructField("nu_cupones_x_cobrar", StringType(), False),
+                           StructField("imp_hecho_de_mkt", StringType(), False),
+                           StructField("fh_fecha_uh", StringType(), False),
+                           StructField("precio_teorico", StringType(), False),
+                           StructField("post_compra", StringType(), False),
+                           StructField("post_venta", StringType(), False),
+                           StructField("imp_yield_compra", StringType(), False),
+                           StructField("imp_yield_venta", StringType(), False),
+                           StructField("imp_spread_compra", StringType(), False),
+                           StructField("imp_spread_venta", StringType(), False),
+                           StructField("nb_mdys", StringType(), False),
+                           StructField("nb_sp", StringType(), False),
+                           StructField("nb_bursatilidad", StringType(), False),
+                           StructField("nb_liquidez", StringType(), False),
+                           StructField("cambio_diario", StringType(), False),
+                           StructField("cambio_semanal", StringType(), False),
+                           StructField("precio_max_12m", StringType(), False),
+                           StructField("precio_min_12m", StringType(), False),
+                           StructField("suspension", StringType(), False),
+                           StructField("volatilidad", StringType(), False),
+                           StructField("volatilidad_2", StringType(), False),
+                           StructField("imp_duracion", StringType(), False),
+                           StructField("imp_duracion_monet", StringType(), False),
+                           StructField("imp_convexidad", StringType(), False),
+                           StructField("var", StringType(), False),
+                           StructField("desviacion_stand", StringType(), False),
+                           StructField("imp_valor_nominal_actualizado", StringType(), False),
+                           StructField("nb_fitch", StringType(), False),
+                           StructField("fecha_precio_maximo", StringType(), False),
+                           StructField("fecha_precio_minimo", StringType(), False),
+                           StructField("sensibilidad", StringType(), False),
+                           StructField("imp_duracion_maculay", StringType(), False),
+                           StructField("imp_tasa_de_rendimiento", StringType(), False),
+                           StructField("nb_hr_ratings", StringType(), False),
+                           StructField("imp_duracion_efectiva", StringType(), False),
+                           StructField("nb_isin", StringType(), False),
+                           StructField("nb_verum", StringType(), False),
+                           StructField("nb_dbrs", StringType(), False),
+                           StructField("filename", StringType(), False)])
+
+bucket_path = 's3://inv-zone-smnylsbx/workspace/'
+folder_path = 'Data_Enginner/vector/xls/output/'
+#name_file = 'SolCML20230704.csv'
+
+archivo_fuente = spark.read.format("csv") \
+                     .options(InferSchema = 'false', 
+                              delimiter = ',', 
+                              header = 'true', 
+                              encoding = 'utf-8', 
+                              nullValue = '') \
+                     .schema(table_schema) \
+                     .load( bucket_path + folder_path)
+df = DynamicFrame.fromDF(archivo_fuente, glueContext, "df")
+df1 = df.toDF().withColumn("fech_proceso", F.to_date(F.col('fech_proceso'),'yyyyMMdd'))\
+               .withColumn("imp_precio_limpio", F.expr("case when trim(imp_precio_limpio) in ('-','nan') then null else imp_precio_limpio end"))\
+               .withColumn("imp_precio_sucio", F.expr("case when trim(imp_precio_sucio) in ('-','nan') then null else imp_precio_sucio end"))\
+               .withColumn("imp_intereses_acumulados", F.expr("case when trim(imp_intereses_acumulados) in ('-','nan') then null else imp_intereses_acumulados end"))\
+               .withColumn("imp_cupon_actual", F.expr("case when trim(imp_cupon_actual) in ('-','nan') then null else imp_cupon_actual end"))\
+               .withColumn("imp_sobretasa", F.expr("case when trim(imp_sobretasa) in ('-','nan') then null else imp_sobretasa end"))\
+               .withColumn("imp_monto_emitido", F.expr("case when trim(imp_monto_emitido) in ('-','nan') then null else imp_monto_emitido end"))\
+               .withColumn("imp_monto_en_circulacion", F.expr("case when trim(imp_monto_en_circulacion) in ('-','nan') then null else imp_monto_en_circulacion end"))\
+               .withColumn("fh_fecha_emision", F.expr("case when trim(fh_fecha_emision) in ('-','nan') then null else fh_fecha_emision end"))\
+               .withColumn("nu_plazo_emision", F.expr("case when trim(nu_plazo_emision) in ('-','nan') then null else nu_plazo_emision end"))\
+               .withColumn("fh_fecha_vencimiento", F.expr("case when trim(fh_fecha_vencimiento) in ('-','nan') then null else fh_fecha_vencimiento end"))\
+               .withColumn("imp_valor_nominal", F.expr("case when trim(imp_valor_nominal) in ('-','nan') then null else imp_valor_nominal end"))\
+               .withColumn("imp_rend_colocacion", F.expr("case when trim(imp_rend_colocacion) in ('-','nan') then null else imp_rend_colocacion end"))\
+               .withColumn("imp_st_colocacion", F.expr("case when trim(imp_st_colocacion) in ('-','nan') then null else imp_st_colocacion end"))\
+               .withColumn("imp_tasa_cupon", F.expr("case when trim(imp_tasa_cupon) in ('-','nan') then null else imp_tasa_cupon end"))\
+               .withColumn("nu_dias_transc_cpn", F.expr("case when trim(nu_dias_transc_cpn) in ('-','nan') then null else nu_dias_transc_cpn end"))\
+               .withColumn("nu_cupones_emision", F.expr("case when trim(nu_cupones_emision) in ('-','nan') then null else nu_cupones_emision end"))\
+               .withColumn("nu_cupones_x_cobrar", F.expr("case when trim(nu_cupones_x_cobrar) in ('-','nan') then null else nu_cupones_x_cobrar end"))\
+               .withColumn("imp_hecho_de_mkt", F.expr("case when trim(imp_hecho_de_mkt) in ('-','nan') then null else imp_hecho_de_mkt end"))\
+               .withColumn("fh_fecha_uh", F.expr("case when trim(fh_fecha_uh) in ('-','nan') then null else fh_fecha_uh end"))\
+               .withColumn("imp_yield_compra", F.expr("case when trim(imp_yield_compra) in ('-','nan') then null else imp_yield_compra end"))\
+               .withColumn("imp_yield_venta", F.expr("case when trim(imp_yield_venta) in ('-','nan') then null else imp_yield_venta end"))\
+               .withColumn("imp_spread_compra", F.expr("case when trim(imp_spread_compra) in ('-','nan') then null else imp_spread_compra end"))\
+               .withColumn("imp_spread_venta", F.expr("case when trim(imp_spread_venta) in ('-','nan') then null else imp_spread_venta end"))\
+               .withColumn("imp_duracion", F.expr("case when trim(imp_duracion) in ('-','nan') then null else imp_duracion end"))\
+               .withColumn("imp_duracion_monet", F.expr("case when trim(imp_duracion_monet) in ('-','nan') then null else imp_duracion_monet end"))\
+               .withColumn("imp_convexidad", F.expr("case when trim(imp_convexidad) in ('-','nan') then null else imp_convexidad end"))\
+               .withColumn("imp_valor_nominal_actualizado", F.expr("case when trim(imp_valor_nominal_actualizado) in ('-','nan') then null else imp_valor_nominal_actualizado end"))\
+               .withColumn("imp_duracion_maculay", F.expr("case when trim(imp_duracion_maculay) in ('-','nan') then null else imp_duracion_maculay end"))\
+               .withColumn("imp_tasa_de_rendimiento", F.expr("case when trim(imp_tasa_de_rendimiento) in ('-','nan') then null else imp_tasa_de_rendimiento end"))\
+               .withColumn("imp_duracion_efectiva", F.expr("case when trim(imp_duracion_efectiva) in ('-','nan') then null else imp_duracion_efectiva end"))\
+               .withColumn("anio", F.substring(F.col('filename'), -14,4))\
+               .withColumn("mes", F.substring(F.col('filename'), -10,2))\
+               .withColumn("dia", F.substring(F.col('filename'), -8,2))
+df2 = DynamicFrame.fromDF(df1, glueContext, "df2")
+
+df3 = df2.toDF().select(F.col('fech_proceso').cast('date'),F.col('nb_tipo_valor'),F.col('nb_emisora'),F.col('nb_serie'),F.col('imp_precio_limpio').cast('decimal(35,15)'),F.col('imp_precio_sucio').cast('decimal(35,15)'),F.col('imp_intereses_acumulados').cast('decimal(35,15)'),F.col('imp_cupon_actual').cast('decimal(35,15)'),F.col('imp_sobretasa').cast('decimal(35,15)'),F.col('nb_nombre_completo'),F.col('nb_sector'),F.col('imp_monto_emitido').cast('decimal(35,15)'),F.col('imp_monto_en_circulacion').cast('decimal(35,15)'),F.col('fh_fecha_emision').cast('date'),F.col('nu_plazo_emision').cast('bigint'),F.col('fh_fecha_vencimiento').cast('date'),F.col('imp_valor_nominal').cast('decimal(35,15)'),F.col('nb_moneda_emision'),F.col('nb_subyacente'),F.col('imp_rend_colocacion').cast('decimal(35,15)'),F.col('imp_st_colocacion').cast('decimal(35,15)'),F.col('nb_frec_cpn'),F.col('imp_tasa_cupon').cast('decimal(35,15)'),F.col('nu_dias_transc_cpn').cast('bigint'),F.col('nb_regla_cupon'),F.col('nu_cupones_emision').cast('bigint'),F.col('nu_cupones_x_cobrar').cast('bigint'),F.col('imp_hecho_de_mkt').cast('decimal(35,15)'),F.col('fh_fecha_uh').cast('date'),F.col('imp_yield_compra').cast('decimal(35,15)'),F.col('imp_yield_venta').cast('decimal(35,15)'),F.col('imp_spread_compra').cast('decimal(35,15)'),F.col('imp_spread_venta').cast('decimal(35,15)'),F.col('nb_mdys'),F.col('nb_sp'),F.col('nb_bursatilidad'),F.col('nb_liquidez'),F.col('imp_duracion').cast('decimal(35,15)'),F.col('imp_duracion_monet').cast('decimal(35,15)'),F.col('imp_convexidad').cast('decimal(35,15)'),F.col('imp_valor_nominal_actualizado').cast('decimal(35,15)'),F.col('nb_fitch'),F.col('imp_duracion_maculay').cast('decimal(35,15)'),F.col('imp_tasa_de_rendimiento').cast('decimal(35,15)'),F.col('nb_hr_ratings'),F.col('imp_duracion_efectiva').cast('decimal(35,15)'),F.col('nb_isin'),F.col('nb_verum'),F.col('nb_dbrs'),F.col('filename'),F.col('anio').cast('int'), F.col('mes').cast('int'), F.col('dia').cast('int'))
+
+
+df4 = DynamicFrame.fromDF(df3, glueContext, "df4")
+
+##opcion 1 solo guarda el archivo  #Este código funciona sólo cuando la tabla ya esta creada
+#df4.toDF().write.partitionBy("anio", "mes", "dia").mode("append").parquet('s3://inv-zone-smnylsbx/workspace/Data_Enginner/Benchmark/stg_d_inv_vector/')
+
+# ## opcion 2 crea la tabla  #Este código solo funciona cuando la tabla no esta creada
+Datasink = glueContext.getSink(path = 's3://inv-zone-smnylsbx/workspace/Data_Enginner/Benchmark/stg_d_inv_vector/', 
+                              connection_type = "s3", 
+                              updateBehavior = "UPDATE_IN_DATABASE", 
+                              partitionKeys = ["anio", "mes", "dia"], 
+                              enableUpdateCatalog = True, 
+                              transformation_ctx = "DataSink")
+Datasink.setCatalogInfo(catalogDatabase = 'bd_inversiones_workspace', 
+                        catalogTableName = 'stg_d_inv_vector')
+Datasink.setFormat("glueparquet")
+Datasink.writeFrame(df4)
+
+
+
+####### MUEVE ARCHIVOS #######
+
+
+s3 = boto3.resource('s3')
+
+ ## Archivos origen
+bucket_origen  = 'inv-zone-smnylsbx'
+origen_bucket = s3.Bucket(bucket_origen)
+carpeta_origen = 'workspace/Data_Enginner/vector/xls/output/'
+
+ ## Archivos destino
+bucket_destino = 'inv-zone-smnylsbx'
+destino_bucket = s3.Bucket(bucket_destino)
+carpeta_destino = 'workspace/Data_Enginner/vector/xls/output_procesados/'
+
+Ori_Arch = carpeta_origen
+Des_Arch = carpeta_destino
+
+for obj in origen_bucket.objects.filter(Prefix=Ori_Arch):
+    old_source = { 'Bucket': bucket_origen,
+                   'Key': obj.key}
+    new_key = obj.key.replace(Ori_Arch, Des_Arch, 1)
+    new_obj = destino_bucket.Object(new_key)
+    new_obj.copy(old_source)
+
+ 
+####### ELIMINA ARCHIVOS #######
+
+delete_bucket_name = 'inv-zone-smnylsbx'
+delete_path = 'workspace/Data_Enginner/vector/xls/output/'
+
+# Sufijo para los archivos a borrar
+delete_sufix_1 = '.csv'
+
+s3 = boto3.resource('s3')
+bucket = s3.Bucket(delete_bucket_name)
+
+objects = bucket.objects.filter(Prefix=delete_path)
+for obj in objects:
+  if obj.key.endswith(delete_sufix_1): 
+      obj.delete()
+
+
+
+job.commit()
