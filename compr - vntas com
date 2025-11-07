@@ -1,0 +1,125 @@
+import pandas as pd 
+import os as os 
+import numpy as np
+from datetime import datetime
+from openpyxl import load_workbook
+
+
+ruta = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts"
+hoy_f = datetime(2025,9,30).date()
+hoyy = hoy_f.strftime("%Y-%m-%d") 
+hoy = hoy_f.strftime("%Y%m%d") 
+
+
+
+ruta_v = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Vector/" #Ruta donde viven los vectores 
+ruta_f = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Movimientos/"
+ruta_s = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Emisores/" 
+ruta_c = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Comité Python/Catalogos/"
+ruta_u = "C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Python Scripts/Utilidad_perdida/" 
+
+
+vector = pd.read_excel(ruta_v+"VectorAnalitico"+hoy+"MD.xls", header = 1) #Ruta + nombre de archivo + fecha 
+movimientos = pd.read_excel(ruta_f+"CR Counterparty"+" "+hoyy+".xls")
+solemi = pd.read_excel(ruta_s+"SolEmi"+" "+hoyy+".xls")
+utilidad = pd.read_excel(ruta_u+"Utilidad_perdida"+hoyy+".xls") 
+fondo = pd.read_excel(ruta_c+"Fondos_ventas"+".xlsx") #Catalogo fondos GA sin SEGSUR 
+
+vector.insert(0, "ID", vector["TIPO VALOR"] +"-"+vector["EMISORA"] +"-"+ vector["SERIE"]) #Inserta un ID al vector
+solemi.insert(0, "ID", solemi["BMV"] +"-"+ solemi["Emisora"] +"-"+ solemi["Serie"]) #Inserta un ID al vector
+movimientos["Serie"] = movimientos["Serie"].astype(str) #Evita riesgo de que solo haya series numericas
+movimientos.insert(0, "ID", movimientos["BMV"] +"-"+ movimientos["Emisora"] +"-"+ movimientos["Serie"]) #Inserta un ID al vector
+utilidad.insert(0, "ID", utilidad["BMV"] +"-"+ utilidad["Emisora"] +"-"+ utilidad["Serie"]) #Inserta un ID al vector
+fondo_ga = fondo[fondo["Product"].isin(["UL", "IL", "CP", "Capital", "Surplus"])]
+fondo_vul = fondo[fondo["Product"] == "VUL"] 
+
+#Limpia SolEmi
+solemi = solemi[["ID","F vto","Mercado","Tasa"]]
+solemi["F vto"] = pd.to_datetime(solemi['F vto']).dt.date
+solemi["Mertasa"]  = solemi["Mercado"] + solemi["Tasa"]
+solemi = solemi[["ID","F vto","Mertasa"]]
+
+#Limpia Vector
+vector = vector[["ID","DURACION"]]
+
+
+#Limpia movimientos
+movimientos = movimientos[movimientos["Movimiento"].isin(["COMPRA", "VENTA"])]
+movimientos["Pzo"] = movimientos["Pzo"].fillna(10000)
+movimientos = movimientos[movimientos["Pzo"] > 30] 
+movimientos = movimientos[["ID","Movimiento","Portafolio","Emisora","Mon","Neto mon liq","Tasa"]]
+
+
+def perdidas(utilidad,fondo):
+    #Limpia Utilidad perdida
+    df_utilidad = utilidad[utilidad["Movimiento"].isin(["Compra","Venta"])]
+    df_utilidad = pd.merge(fondo, df_utilidad, on="Portafolio",how="inner")
+    df_utilidad = df_utilidad[["ID","Ut/Pérd realizada"]]
+    df_utilidad = df_utilidad.groupby("ID")["Ut/Pérd realizada"].sum().reset_index()
+    
+    return df_utilidad
+
+def ventas(fondo,movs,solemi,vector):
+    
+    movs_ga = pd.merge(fondo,movs,on="Portafolio", how="inner")
+    movs_ga = movs_ga[["ID","Movimiento","Emisora","Mon","Neto mon liq","Tasa"]]
+    movs_ga = movs_ga.groupby(["ID","Movimiento", "Emisora", "Mon"], as_index=False).agg({"Tasa": "mean","Neto mon liq": "sum"})
+    movs_ga = pd.merge(movs_ga,solemi,on="ID",how="left")
+    movs_ga = pd.merge(movs_ga,vector,on="ID",how="left")
+    
+
+
+    #ORDENA PARA COMPRAS Y VENTAS
+    df_ga = pd.merge(fondo,movs,on="Portafolio", how="inner")
+    df_ga = df_ga[["Product","ID"]].drop_duplicates()
+    df_ga = df_ga.groupby('ID')['Product'].apply(lambda x: ', '.join(x)).reset_index()
+    df_ga = pd.merge(df_ga,movs_ga,on="ID",how="left")
+
+    return df_ga
+
+
+#Manda a llamar funciones de utilidad perdida
+ut_ga = perdidas(utilidad,fondo_ga)
+ut_vul = perdidas(utilidad,fondo_vul)
+
+
+#Manda a llamar funciones de ventas 
+df_ga = ventas(fondo_ga, movimientos, solemi, vector)
+df_vul = ventas(fondo_vul, movimientos, solemi, vector)
+
+
+
+
+#Compra GA
+df_ga_c = df_ga[df_ga["Movimiento"]  == "COMPRA"]
+df_ga_c = df_ga_c.sort_values(by=["Mertasa", "Neto mon liq"], ascending=[True, False])
+df_ga_c = df_ga_c[["ID","Emisora","F vto","Neto mon liq","Tasa","Product","DURACION","Mon","Mertasa"]]
+df_ga_c["Neto mon liq"] = df_ga_c["Neto mon liq"] / 1000000
+
+#Venta GA
+df_ga_v = df_ga[df_ga["Movimiento"]  == "VENTA"]
+df_ga_v = df_ga_v.sort_values(by=["Mertasa", "Neto mon liq"], ascending=[True, False])
+df_ga_v = pd.merge(df_ga_v, ut_ga, on="ID", how="left").fillna(0)
+df_ga_v = df_ga_v[["ID","Emisora","F vto","Neto mon liq","Tasa","Ut/Pérd realizada","Product","DURACION","Mon","Mertasa"]]
+df_ga_v[["Neto mon liq","Ut/Pérd realizada"]] = df_ga_v[["Neto mon liq","Ut/Pérd realizada"]] / 1000000
+
+#Compra VUL
+df_vul_c = df_vul[df_vul["Movimiento"]  == "COMPRA"]
+df_vul_c = df_vul_c.sort_values(by=["Mertasa", "Neto mon liq"], ascending=[True, False])
+df_vul_c = df_vul_c[["ID","Emisora","F vto","Neto mon liq","Tasa","Product","DURACION","Mon","Mertasa"]]
+df_vul_c["Neto mon liq"] = df_vul_c["Neto mon liq"] / 1000000 
+
+#Venta VUL
+df_vul_v = df_vul[df_vul["Movimiento"]  == "VENTA"]
+df_vul_v = df_vul_v.sort_values(by=["Mertasa", "Neto mon liq"], ascending=[True, False])
+df_vul_v = pd.merge(df_vul_v,ut_vul,on="ID",how="left").fillna(0)
+df_vul_v = df_vul_v[["ID","Emisora","F vto","Neto mon liq","Tasa","Ut/Pérd realizada","Product","DURACION","Mon","Mertasa"]]
+df_vul_v[["Neto mon liq","Ut/Pérd realizada"]] = df_vul_v[["Neto mon liq","Ut/Pérd realizada"]] / 1000000 
+
+
+
+with pd.ExcelWriter('C:/Users/llopezd/OneDrive - Seguros Monterrey New York Life S.A de C.V/Documentos/Comité Python/Slide Ventas/'+"Ventas"+hoyy+'.xlsx', engine='openpyxl') as writer:
+    df_ga_c.to_excel(writer, sheet_name='compras_ga', index=False)
+    df_ga_v.to_excel(writer, sheet_name='ventas_ga', index=False)
+    df_vul_c.to_excel(writer, sheet_name='compras_vul', index=False)
+    df_vul_v.to_excel(writer, sheet_name='ventas_vul', index=False)
